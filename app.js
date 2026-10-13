@@ -1366,8 +1366,9 @@ function telaConfig() {
     <div class="acoes-linha">
       <button class="bt" id="btExportar">Exportar backup (arquivo)</button>
       <label class="bt">Importar backup<input type="file" id="arqImportar" accept=".json,application/json" hidden></label>
-      ${Armaz.modo !== 'servidor' ? '<button class="bt" id="btTrocar">Trocar local de armazenamento</button>' : ''}
+      ${Armaz.modo === 'servidor' ? '' : dropboxFixo() ? '<button class="bt perigo" id="btDesconectarDbx">Desconectar este aparelho do Dropbox</button>' : '<button class="bt" id="btTrocar">Trocar local de armazenamento</button>'}
     </div>
+    ${dropboxFixo() ? `<p class="dica">Este aparelho está conectado à pasta <b>${esc(pastaDropboxFixa())}</b> do Dropbox da administradora. Para conectar outro aparelho, abra o app nele e use <b>Conectar este aparelho (administrador)</b>. Aparelho perdido ou de alguém que saiu da equipe: no site do Dropbox (conta da administradora) → Configurações → Aplicativos conectados, remova o aplicativo; todos os aparelhos precisarão ser conectados de novo.</p>` : ''}
     ${Armaz.modo !== 'servidor' ? '<p class="dica">Neste modo, os usuários e as permissões são controlados pelo aplicativo. Quem tiver acesso direto à pasta (fora do aplicativo) consegue alterar os arquivos; compartilhe a pasta somente com quem deve ter acesso.</p>' : ''}
   </section>
   ${secaoIndicesHTML()}`;
@@ -1428,6 +1429,15 @@ function telaConfig() {
   ligarIndices();
   $('#btExportar').addEventListener('click', () => executar(exportarBackup));
   $('#arqImportar').addEventListener('change', e => executar(async () => { if (e.target.files[0]) await importarBackup(e.target.files[0]); e.target.value = ''; }));
+  $('#btDesconectarDbx')?.addEventListener('click', () => {
+    if (!confirm('Desconectar este aparelho do Dropbox? Para voltar a usar o app nele, o administrador terá de conectá-lo de novo com a conta do Dropbox da administradora.')) return;
+    sujo = false;
+    NuvemDropbox.sair();
+    Armaz.desconectar();
+    Auth.sair();
+    location.hash = '';
+    location.reload();
+  });
   $('#btTrocar')?.addEventListener('click', () => {
     if (!confirm('Trocar o local de armazenamento? Os dados atuais continuam onde estão; você escolherá outro local na próxima tela.')) return;
     Armaz.desconectar();
@@ -1462,7 +1472,29 @@ async function importarBackup(arq) {
 }
 
 /* ================= Conexão ================= */
+// Abertura da publicação com Dropbox fixo: só a conexão do aparelho pelo administrador, sem opções técnicas
+function telaConexaoDropbox() {
+  document.body.classList.remove('conectado', 'admin', 'menu-aberto');
+  $('#statusArmaz').textContent = '';
+  $('#usuarioTopo').innerHTML = '';
+  const pronto = !!chavesNuvem().dropbox && nuvemDisponivel();
+  $('#conteudo').innerHTML = `<section class="cartao caixa-login">
+    <h1>Controle de Locações</h1>
+    ${pronto ? `
+      <p>Este aparelho ainda não está conectado aos dados da administradora.</p>
+      <p>A conexão é feita <b>uma única vez em cada aparelho</b>, pelo <b>administrador</b>, com a conta do Dropbox da administradora. Depois disso, cada pessoa entra com o próprio login e senha.</p>
+      <div class="acoes-linha"><button class="bt primario" id="btConectarDbx">Conectar este aparelho (administrador)</button></div>
+      <p class="dica">Se você não é o administrador, peça a ele para conectar este aparelho.</p>`
+      : '<p class="alerta">O aplicativo ainda não foi configurado para acessar os dados. Avise o administrador.</p>'}
+  </section>`;
+  $('#btConectarDbx')?.addEventListener('click', () => executar(async () => {
+    if (NuvemDropbox.temAcesso()) return conectarDropbox();
+    await NuvemDropbox.entrar();
+  }));
+}
+
 async function telaConexao() {
+  if (dropboxFixo()) return telaConexaoDropbox();
   document.body.classList.remove('conectado');
   $('#statusArmaz').textContent = '';
   const temFS = 'showDirectoryPicker' in window;
@@ -1534,7 +1566,7 @@ async function telaConexao() {
 }
 
 async function conectarDropbox() {
-  NuvemDropbox.pasta = localStorage.getItem('cl-dbx-pasta') || '';
+  NuvemDropbox.pasta = dropboxFixo() ? pastaDropboxFixa() : localStorage.getItem('cl-dbx-pasta') || '';
   const situacao = await NuvemDropbox.verificarPasta(NuvemDropbox.pasta);
   Armaz.usarNuvem('dropbox');
   if (situacao === 'criada') setTimeout(() => aviso(`Pasta ${NuvemDropbox.pasta} criada no Dropbox.`), 800);
@@ -1600,6 +1632,8 @@ async function iniciar() {
       await NuvemDropbox.concluirEntrada(qs.get('code'));
       return await conectarDropbox();
     }
+    // Publicação com Dropbox fixo: ignora qualquer outro modo guardado neste navegador
+    if (dropboxFixo()) return NuvemDropbox.temAcesso() ? await conectarDropbox() : telaConexaoDropbox();
     const modo = localStorage.getItem('cl-modo');
     if (modo === 'local') { Armaz.modo = 'local'; return await conectado(); }
     if (modo === 'pasta' && await Armaz.retomarPasta(false)) return await conectado();
@@ -1607,9 +1641,10 @@ async function iniciar() {
     await telaConexao();
   } catch (e) {
     console.error(e);
+    const fixo = dropboxFixo();
     $('#conteudo').innerHTML = `<section class="cartao erro"><h2>Não foi possível abrir os dados</h2><p>${esc(e.message)}</p>
-      <div class="acoes-linha"><button class="bt" onclick="location.reload()">Tentar novamente</button><button class="bt" id="btOutroLocal">Escolher outro local</button></div></section>`;
-    $('#btOutroLocal').addEventListener('click', () => { Armaz.desconectar(); Armaz.modo = null; telaConexao(); });
+      <div class="acoes-linha"><button class="bt" onclick="location.reload()">Tentar novamente</button><button class="bt" id="btOutroLocal">${fixo ? 'Conectar este aparelho de novo (administrador)' : 'Escolher outro local'}</button></div></section>`;
+    $('#btOutroLocal').addEventListener('click', () => { if (fixo) NuvemDropbox.sair(); Armaz.desconectar(); Armaz.modo = null; telaConexao(); });
   }
 }
 

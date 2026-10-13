@@ -10,6 +10,10 @@ const chavesNuvem = () => ({
   google: (window.NUVEM?.googleClientId || localStorage.getItem('cl-gdr-cliente') || '').trim(),
 });
 const urlRetorno = () => location.origin + location.pathname;
+// Publicação com armazenamento fixo no Dropbox (ex.: GitHub Pages): nuvem-config.js traz modo 'dropbox',
+// a chave e a pasta. Então ninguém escolhe o local nem digita chave: só o administrador conecta cada aparelho.
+const dropboxFixo = () => window.NUVEM?.modo === 'dropbox';
+const pastaDropboxFixa = () => (window.NUVEM?.dropboxPasta || '/Locacoes').trim();
 const nuvemDisponivel = () => window.isSecureContext && !!window.crypto?.subtle;
 
 function b64url(bytes) {

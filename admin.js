@@ -13,7 +13,7 @@ async function telaLogin(mensagem) {
     c.innerHTML = `<section class="cartao erro caixa-login"><h2>Sem conexão com os dados</h2><p>${esc(e.message)}</p><button class="bt primario" onclick="location.reload()">Tentar novamente</button></section>`;
     return;
   }
-  const outroLocal = Armaz.modo !== 'servidor' ? '<p class="dica"><a href="#" id="lnkOutroLocal">Usar outro local de dados neste aparelho</a></p>' : '';
+  const outroLocal = Armaz.modo !== 'servidor' && !dropboxFixo() ? '<p class="dica"><a href="#" id="lnkOutroLocal">Usar outro local de dados neste aparelho</a></p>' : '';
 
   if (!tem && !Auth.podeCriarPrimeiroAdmin()) {
     c.innerHTML = `<section class="cartao caixa-login"><h1>Controle de Locações</h1>
