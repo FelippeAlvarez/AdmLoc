@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual do Controle de Locações</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: manual de consulta — índice fixo à esquerda no computador, coluna de leitura de ~68 caracteres, capturas largas */
+:root {
+  --fundo: #f4f6f9;
+  --papel: #ffffff;
+  --tinta: #1b2533;
+  --suave: #5b6878;
+  --linha: #dce3ec;
+  --marca: #1f4e79;
+  --marca-claro: #e7eef7;
+  --adm: #5b2bb5;
+  --adm-claro: #efe8fd;
+  --todos: #1e7d4f;
+  --todos-claro: #e3f4ea;
+  --atencao: #8a5a00;
+  --atencao-claro: #fff4d6;
+  --console: #0f1720;
+  --console-texto: #d6e2ee;
+  --f-titulo: "Literata", Georgia, "Times New Roman", serif;
+  --f-texto: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fundo: #10161e; --papel: #17202b; --tinta: #e3e9f1; --suave: #9aa8b8; --linha: #2a3644;
+    --marca: #8db8e6; --marca-claro: #1d2c3d; --adm: #c4a8ff; --adm-claro: #2a2140; --todos: #7fd1a6; --todos-claro: #183126;
+    --atencao: #f2c66d; --atencao-claro: #33290f; --console: #070b10; --console-texto: #d6e2ee; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --fundo: #10161e; --papel: #17202b; --tinta: #e3e9f1; --suave: #9aa8b8; --linha: #2a3644;
+  --marca: #8db8e6; --marca-claro: #1d2c3d; --adm: #c4a8ff; --adm-claro: #2a2140; --todos: #7fd1a6; --todos-claro: #183126;
+  --atencao: #f2c66d; --atencao-claro: #33290f; --console: #070b10; --console-texto: #d6e2ee; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--fundo); color: var(--tinta); font: 16px/1.6 var(--f-texto); margin: 0; }
+a { color: var(--marca); }
+.pagina { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 40px; max-width: 1180px; margin: 0 auto; padding-inline: 24px; padding-block: 32px 80px; }
+@media (max-width: 900px) { .pagina { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-inline: 16px; padding-block: 20px 60px; } }
+
+/* Índice */
+.indice { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); align-self: start; max-height: calc(100vh - 40px); overflow-y: auto; font-size: 14px; }
+.indice .marca { font-family: var(--f-titulo); font-weight: 700; font-size: 18px; color: var(--marca); margin-bottom: 14px; display: block; text-decoration: none; }
+.indice ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.indice li a { display: block; padding: 5px 10px; border-radius: 6px; text-decoration: none; color: var(--tinta); }
+.indice li a:hover, .indice li a:focus-visible { background: var(--marca-claro); color: var(--marca); outline: none; }
+.indice .grupo { margin: 16px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--suave); padding-left: 10px; }
+@media (max-width: 900px) {
+  .indice { position: static; max-height: none; background: var(--papel); border: 1px solid var(--linha); border-radius: 10px; padding: 14px; }
+  .indice ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+}
+
+/* Texto */
+main { min-width: 0; }
+.abertura { background: var(--papel); border: 1px solid var(--linha); border-radius: 12px; padding: 28px; margin-bottom: 28px; }
+h1 { font-family: var(--f-titulo); font-size: clamp(28px, 4vw, 38px); line-height: 1.15; margin: 0 0 10px; text-wrap: balance; color: var(--marca); }
+h2 { font-family: var(--f-titulo); font-size: 26px; line-height: 1.25; margin: 56px 0 6px; text-wrap: balance; scroll-margin-top: 20px; }
+h3 { font-size: 18px; margin: 30px 0 6px; scroll-margin-top: 20px; }
+p, li { max-width: 68ch; }
+.sub { color: var(--suave); font-size: 17px; margin: 0; }
+.parte { margin-top: 64px; padding-top: 18px; border-top: 3px solid var(--linha); }
+.parte-rotulo { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--suave); margin: 0; }
+.parte h2 { margin-top: 4px; }
+
+.publico { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 99px; vertical-align: middle; }
+.publico.adm { background: var(--adm-claro); color: var(--adm); }
+.publico.todos { background: var(--todos-claro); color: var(--todos); }
+
+.caminhos { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
+.caminho { border: 1px solid var(--linha); border-radius: 10px; padding: 16px 18px; text-decoration: none; color: var(--tinta); display: flex; flex-direction: column; gap: 4px; background: var(--fundo); }
+.caminho:hover, .caminho:focus-visible { border-color: var(--marca); outline: none; }
+.caminho b { font-size: 16px; }
+.caminho span { color: var(--suave); font-size: 14px; }
+
+ol.passos { counter-reset: passo; list-style: none; padding: 0; margin: 14px 0; display: flex; flex-direction: column; gap: 10px; }
+ol.passos > li { counter-increment: passo; position: relative; padding-left: 40px; }
+ol.passos > li::before { content: counter(passo); position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 50%; background: var(--marca); color: var(--papel); font-size: 13px; font-weight: 600; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+ul { padding-left: 20px; }
+li + li { margin-top: 4px; }
+code, .mono { font-family: var(--f-mono); font-size: .88em; background: var(--marca-claro); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+kbd { font-family: var(--f-mono); font-size: .85em; border: 1px solid var(--linha); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--papel); }
+.botao { display: inline-block; font-size: .9em; font-weight: 600; border: 1px solid var(--linha); border-radius: 5px; padding: 0 7px; background: var(--papel); white-space: nowrap; }
+
+.nota { border-radius: 10px; padding: 12px 16px; margin: 16px 0; max-width: 72ch; font-size: 15px; }
+.nota p { margin: 0; }
+.nota.dica { background: var(--marca-claro); }
+.nota.atencao { background: var(--atencao-claro); color: var(--tinta); }
+.nota.atencao b:first-child { color: var(--atencao); }
+
+/* Capturas de tela */
+figure { margin: 18px 0 24px; }
+figure img { display: block; width: 100%; height: auto; border: 1px solid var(--linha); border-radius: 8px; box-shadow: 0 2px 14px rgba(15, 30, 50, .08); cursor: zoom-in; background: #fff; }
+figcaption { font-size: 13.5px; color: var(--suave); margin-top: 8px; max-width: 72ch; }
+.celulares { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; max-width: 760px; }
+.celulares img { border-radius: 16px; }
+.exemplos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 640px) { .celulares, .exemplos { grid-template-columns: minmax(0, 1fr); max-width: 360px; } }
+
+/* Janela do servidor (ilustração) */
+.console { background: var(--console); color: var(--console-texto); border-radius: 8px; font: 13px/1.55 var(--f-mono); padding: 0; margin: 18px 0; max-width: 680px; overflow: hidden; }
+.console .barra { background: #1f2a37; color: #aebccc; padding: 6px 12px; font-size: 12px; }
+.console pre { margin: 0; padding: 14px 16px; overflow-x: auto; white-space: pre; }
+.console .ok { color: #7fd1a6; } .console .av { color: #f2c66d; } .console .ci { color: #8fd3ff; }
+
+/* Tabelas */
+.tabela-rolagem { overflow-x: auto; margin: 14px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; background: var(--papel); border: 1px solid var(--linha); border-radius: 8px; overflow: hidden; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+th { font-size: 13px; color: var(--suave); font-weight: 600; background: var(--fundo); }
+tr:last-child td { border-bottom: 0; }
+
+.rotina { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 16px 0; }
+.rotina div { background: var(--papel); border: 1px solid var(--linha); border-radius: 10px; padding: 14px 16px; }
+.rotina b { display: block; font-family: var(--f-titulo); color: var(--marca); margin-bottom: 4px; }
+.rotina p { margin: 0; font-size: 14.5px; }
+
+details { background: var(--papel); border: 1px solid var(--linha); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 76ch; }
+summary { cursor: pointer; font-weight: 600; }
+details p { margin: 8px 0 0; }
+
+.rodape-manual { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--linha); color: var(--suave); font-size: 13px; }
+
+/* Ampliação das imagens */
+.zoom { position: fixed; inset: 0; background: rgba(8, 14, 22, .86); display: grid; place-items: center; padding: 20px; z-index: 10; cursor: zoom-out; }
+.zoom img { max-width: 100%; max-height: 100%; border-radius: 6px; }
+:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+</head>
+<body>
+<div class="pagina">
+  <nav class="indice" aria-label="Índice">
+    <a class="marca" href="#inicio">Controle de Locações</a>
+    <div class="grupo">Antes de começar</div>
+    <ol>
+      <li><a href="#perfis">Perfis de acesso</a></li>
+    </ol>
+    <div class="grupo">Administrador</div>
+    <ol>
+      <li><a href="#instalar">1. Instalar</a></li>
+      <li><a href="#primeiro">2. Primeiro acesso</a></li>
+      <li><a href="#administradora">3. Dados da administradora</a></li>
+      <li><a href="#usuarios">4. Usuários</a></li>
+      <li><a href="#servidor">5. Servidor e rede</a></li>
+      <li><a href="#celular-fora">6. Acesso de fora</a></li>
+      <li><a href="#backup">7. Backup</a></li>
+      <li><a href="#atualizar">8. Atualizar o app</a></li>
+    </ol>
+    <div class="grupo">Uso diário (todos)</div>
+    <ol>
+      <li><a href="#entrar">Entrar e trocar a senha</a></li>
+      <li><a href="#painel">Painel do mês</a></li>
+      <li><a href="#cadastros">Cadastros e contratos</a></li>
+      <li><a href="#mes">Lançar o mês</a></li>
+      <li><a href="#reajuste">Reajuste anual</a></li>
+      <li><a href="#cobranca">Cobrança e inadimplência</a></li>
+      <li><a href="#boletos">Boletos (prévia)</a></li>
+      <li><a href="#vigentes">Contratos vigentes</a></li>
+      <li><a href="#relatorios">Relatórios em PDF</a></li>
+      <li><a href="#no-celular">No celular</a></li>
+      <li><a href="#rotina">Rotina do mês</a></li>
+      <li><a href="#duvidas">Dúvidas e problemas</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="abertura" id="inicio">
+      <h1>Manual do Controle de Locações</h1>
+      <p class="sub">Como instalar, configurar e usar o aplicativo no dia a dia: contratos, recebimentos, repasses, cobrança e relatórios.</p>
+      <div class="caminhos">
+        <a class="caminho" href="#instalar"><span class="publico adm">Administrador</span><b>Instalar e configurar</b><span>Servidor, primeiro acesso, dados da administradora e usuários.</span></a>
+        <a class="caminho" href="#entrar"><span class="publico todos">Todos</span><b>Usar no dia a dia</b><span>Lançar meses, receber, repassar, cobrar e gerar relatórios.</span></a>
+        <a class="caminho" href="#rotina"><span class="publico todos">Todos</span><b>Rotina do mês</b><span>O que fazer, em que ordem, a cada mês.</span></a>
+      </div>
+    </header>
+
+    <section id="perfis">
+      <h2>Perfis de acesso</h2>
+      <p>Cada pessoa entra com o próprio <b>login e senha</b>. Há dois perfis:</p>
+      <div class="tabela-rolagem"><table>
+        <thead><tr><th>Perfil</th><th>O que pode fazer</th></tr></thead>
+        <tbody>
+          <tr><td><span class="publico adm">Administrador</span></td><td>Tudo, inclusive a área <b>Administração</b>: dados da administradora, usuários, rubricas, encargos padrão, índices, servidor, local dos dados e backups.</td></tr>
+          <tr><td><span class="publico todos">Usuário</span></td><td>Cadastros, contratos, meses, pagamentos, repasses, cobrança e relatórios. Não vê a área Administração. Troca a própria senha em <b>Minha conta</b>.</td></tr>
+        </tbody>
+      </table></div>
+      <p>Neste manual, cada parte indica para quem ela é. Os exemplos usam dados fictícios.</p>
+    </section>
+
+    <div class="parte">
+      <p class="parte-rotulo">Parte 1 · <span class="publico adm">Administrador</span></p>
+      <h2 id="instalar">1. Instalar o servidor</h2>
+    </div>
+    <p>O app fica num computador do escritório que permanece ligado durante o expediente (o "servidor"). Os outros computadores e os celulares acessam pelo navegador, sem instalar nada.</p>
+    <ol class="passos">
+      <li>Copie a pasta <code>controle-locacoes</code> para esse computador (por exemplo, em <code>C:\controle-locacoes</code>).</li>
+      <li>Dê dois cliques em <b>Iniciar servidor.bat</b>. Se o Windows avisar "O Windows protegeu o computador", clique em <b>Mais informações</b> e depois em <b>Executar assim mesmo</b>.</li>
+      <li>Abre uma janela preta, a <b>janela do servidor</b>, e o navegador abre sozinho no app (<code>http://localhost:8080</code>).</li>
+      <li>Deixe a janela do servidor aberta (pode minimizá-la). Fechar a janela desliga o app para todos.</li>
+    </ol>
+    <div class="console" role="img" aria-label="Ilustração da janela do servidor">
+      <div class="barra">Controle de Locacoes - servidor</div>
+<pre>
+  <span class="ok">CONTROLE DE LOCACOES - servidor em funcionamento</span>
+  Dados gravados em: C:\controle-locacoes\dados
+
+  Neste computador:  http://localhost:8080
+
+  <span class="av">O acesso pelos outros computadores e pelo celular ainda nao esta liberado.</span>
+  <span class="av">Libere em: Administracao > Servidor > Liberar acesso na rede (neste computador).</span>
+
+  <span class="ci">Primeiro uso: crie o administrador no navegador deste computador.</span>
+
+  Mantenha esta janela aberta (pode minimiza-la). Para encerrar, feche a janela.
+</pre>
+    </div>
+    <p>Esse duplo clique é o único passo feito fora do app. O resto se configura dentro dele, inclusive o início automático com o Windows (seção 5).</p>
+
+    <h2 id="primeiro">2. Primeiro acesso: criar o administrador</h2>
+    <p>Na primeira vez, o app pede para criar o administrador. Faça isso <b>no próprio computador do servidor</b>: por segurança, essa tela só funciona nele.</p>
+    <figure><img src="img/primeiro-acesso.jpg" alt="Tela de primeiro acesso com campos de nome, login e senha do administrador" loading="lazy">
+      <figcaption>Informe seu nome, um login (ex.: <code>maria</code>) e uma senha de pelo menos 6 caracteres. Você entra direto na Administração.</figcaption></figure>
+
+    <h2 id="administradora">3. Dados da administradora</h2>
+    <p>Em <b>Administração → Administradora, rubricas e encargos</b>, preencha nome, CNPJ, CRECI, endereço, telefone, e-mail, site e o logotipo. Eles formam o <b>cabeçalho de todos os relatórios em PDF</b>.</p>
+    <figure><img src="img/admin-administradora.jpg" alt="Formulário com os dados da administradora e o logotipo" loading="lazy">
+      <figcaption>Depois de preencher, clique em <span class="botao">Salvar configurações</span>, no pé da tela. Se você sair sem salvar, o app avisa.</figcaption></figure>
+    <p>Na mesma área ficam:</p>
+    <ul>
+      <li><b>Rubricas</b>: a lista de lançamentos sugeridos (Aluguel, Condomínio, IPTU…). Marque <b>Locação</b> nas que são valor de aluguel; elas formam a base da taxa de administração quando ela incide só sobre a locação.</li>
+      <li><b>Encargos moratórios (padrão)</b>: multa, juros ao mês, honorários e índice de correção usados na cobrança de atrasados. Cada contrato pode ter os seus.</li>
+      <li><b>Índices de correção</b>: IGP-M, IPCA, INPC e IGP-DI vêm do Banco Central e se atualizam sozinhos.</li>
+    </ul>
+
+    <h2 id="usuarios">4. Cadastrar os usuários</h2>
+    <p>Em <b>Administração → Usuários</b>, cadastre cada pessoa da equipe. Não compartilhe logins: cada alteração fica registrada com o nome de quem a fez.</p>
+    <figure><img src="img/admin-usuarios.jpg" alt="Lista de usuários com nome, login, perfil e situação" loading="lazy">
+      <figcaption>A lista mostra o perfil e se o acesso está ativo. Use <span class="botao">Editar</span> para trocar a senha de quem esqueceu ou para suspender um acesso.</figcaption></figure>
+    <ol class="passos">
+      <li>Clique em <span class="botao">+ Novo usuário</span>.</li>
+      <li>Informe o nome, o login, o perfil (<b>Usuário</b> ou <b>Administrador</b>) e uma senha inicial.</li>
+      <li>Passe o login e a senha para a pessoa. Ela pode trocar a senha em <b>Minha conta</b>.</li>
+    </ol>
+    <figure><img src="img/admin-novo-usuario.jpg" alt="Janela de cadastro de novo usuário" loading="lazy">
+      <figcaption>Para suspender o acesso de alguém sem apagar o histórico, desmarque <b>Acesso ativo</b>. A pessoa sai na hora.</figcaption></figure>
+    <div class="nota dica"><p>O app sempre mantém pelo menos um administrador ativo. Vale ter dois administradores, para não depender de uma só pessoa.</p></div>
+
+    <h2 id="servidor">5. Servidor e acesso pela rede</h2>
+    <p>Em <b>Administração → Servidor</b>:</p>
+    <figure><img src="img/admin-servidor.jpg" alt="Seção Servidor com pasta dos dados, porta, início automático e acesso pela rede" loading="lazy">
+      <figcaption>Ao salvar uma mudança de pasta ou de porta, o servidor reinicia sozinho e o app se reconecta em alguns segundos.</figcaption></figure>
+    <div class="tabela-rolagem"><table>
+      <thead><tr><th>Opção</th><th>Para que serve</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pasta dos dados</b></td><td>Onde os dados são gravados. Use uma pasta da rede para que o backup do escritório também a copie (ex.: <code>\\SERVIDOR\Locacoes\dados</code>). Marque <b>Copiar os dados atuais</b> para levar o que já existe.</td></tr>
+        <tr><td><b>Porta</b></td><td>Normalmente <code>8080</code>. Só mude se outro programa já usar essa porta.</td></tr>
+        <tr><td><b>Iniciar automaticamente com o Windows</b></td><td>O servidor liga sozinho, minimizado, quando o computador é ligado.</td></tr>
+        <tr><td><b>Liberar acesso na rede</b></td><td>Libera os outros computadores e os celulares do escritório. Faça <b>uma vez</b>, no computador do servidor: o Windows pede uma autorização ("Deseja permitir…"). Depois, a seção mostra os endereços para a equipe, como <code>http://192.168.0.10:8080</code>.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="celular-fora">6. Acesso pelo celular e de fora do escritório</h2>
+    <ul>
+      <li><b>No escritório (mesmo Wi-Fi):</b> no celular, abra o endereço mostrado na seção Servidor (ex.: <code>http://192.168.0.10:8080</code>) no Chrome ou no Safari e use "Adicionar à tela inicial" para criar um ícone.</li>
+      <li><b>Fora do escritório:</b> instale o <a href="https://tailscale.com" rel="noopener">Tailscale</a> (gratuito) no computador do servidor e no celular ou notebook, com a mesma conta. Depois, acesse <code>http://ENDERECO-TAILSCALE-DO-SERVIDOR:8080</code>. Não é preciso mexer no roteador.</li>
+    </ul>
+    <div class="nota dica"><p><b>Alternativa sem servidor:</b> os dados também podem ficar no Dropbox ou no Google Drive, com o app publicado na internet. O passo a passo está no arquivo <code>README.md</code> da pasta do app (seção "Dados na nuvem").</p></div>
+
+    <h2 id="backup">7. Backup e segurança</h2>
+    <figure><img src="img/admin-armazenamento.jpg" alt="Seção Armazenamento dos dados com exportar e importar backup" loading="lazy">
+      <figcaption>Exportar backup gera um único arquivo com todos os dados.</figcaption></figure>
+    <ul>
+      <li>Todo dia, antes da primeira alteração, o app guarda uma <b>cópia automática</b> de todos os arquivos em <code>_backups\AAAA-MM-DD</code>, dentro da pasta dos dados.</li>
+      <li>Uma vez por mês, use <span class="botao">Exportar backup (arquivo)</span> e guarde o arquivo fora do computador do servidor (pen drive ou nuvem).</li>
+      <li>Os dados contêm CPF e dados bancários: desative quem sair da equipe e não divulgue o arquivo <code>servidor.segredo</code>.</li>
+    </ul>
+
+    <h2 id="atualizar">8. Atualizar o app (sem perder dados)</h2>
+    <p>Cada versão nova vem num único arquivo <code>Controle-de-Locacoes-X.Y.Z.zip</code>. A atualização troca só os arquivos do programa: <b>dados, usuários e configurações não são alterados</b>, e antes de qualquer troca o app guarda uma cópia da versão atual e dos dados em <code>_versoes_anteriores</code>.</p>
+    <ol class="passos">
+      <li>Entre como administrador e abra <b>Administração → Servidor → Versão e atualização</b>.</li>
+      <li>Clique em <span class="botao">Escolher arquivo</span>, selecione o .zip da versão nova e clique em <span class="botao">Instalar atualização</span>.</li>
+      <li>Aguarde alguns segundos: o servidor reinicia e o app recarrega já na versão nova (o número aparece no fim do menu).</li>
+    </ol>
+    <div class="nota dica"><p>Sem acesso ao app? No computador do servidor, extraia o .zip em outra pasta (ex.: Downloads) e dê dois cliques em <b>Instalar atualizacao.bat</b>. O passo a passo está no arquivo <b>COMO ATUALIZAR.txt</b>, dentro do pacote.</p></div>
+
+    <div class="parte">
+      <p class="parte-rotulo">Parte 2 · <span class="publico todos">Todos os usuários</span></p>
+      <h2 id="entrar">Entrar e trocar a senha</h2>
+    </div>
+    <ol class="passos">
+      <li>Abra no navegador o endereço que o administrador passou (ex.: <code>http://192.168.0.10:8080</code>).</li>
+      <li>Digite seu login e sua senha. Em aparelho próprio, marque <b>Manter conectado neste aparelho</b>.</li>
+      <li>No primeiro acesso em cada aparelho, leia e aceite os <b>Termos de Uso</b>.</li>
+      <li>Troque a senha inicial em <b>Minha conta</b>.</li>
+    </ol>
+    <div class="nota dica"><p>Este manual fica sempre à mão no botão <b>Manual de uso ↗</b>, no menu à esquerda do app. No fim do menu ficam a versão instalada e os links <b>Sobre e licenças</b> e <b>Termos de Uso</b>.</p></div>
+    <figure><img src="img/login.jpg" alt="Tela de login com campos de login e senha" loading="lazy">
+      <figcaption>Esqueceu a senha? Peça ao administrador para definir uma nova. Para sair, use <span class="botao">Sair</span>, no alto da tela.</figcaption></figure>
+    <figure><img src="img/conta.jpg" alt="Tela Minha conta com os dados do usuário e o formulário para trocar a senha" loading="lazy">
+      <figcaption>Minha conta: seus dados de acesso e a troca de senha.</figcaption></figure>
+
+    <h2 id="painel">Painel do mês</h2>
+    <p>É a tela inicial: a situação do mês em todos os contratos ativos. Use as setas ◀ ▶ para trocar o mês.</p>
+    <figure><img src="img/painel.jpg" alt="Painel do mês com indicadores e a lista de contratos" loading="lazy">
+      <figcaption>Os quadros resumem o mês: quanto é devido, quanto foi recebido, o que não foi pago, as taxas de administração e o saldo a repassar.</figcaption></figure>
+    <div class="tabela-rolagem"><table>
+      <thead><tr><th>Sinal na tela</th><th>Significado</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pago</b> (verde)</td><td>O locatário pagou o mês.</td></tr>
+        <tr><td><b>A vencer</b> (amarelo)</td><td>Ainda não chegou o vencimento.</td></tr>
+        <tr><td><b>Em atraso</b> / <b>Parcial</b> (vermelho)</td><td>Venceu e não foi pago, ou foi pago só em parte.</td></tr>
+        <tr><td><b>Reajuste</b> (roxo)</td><td>O contrato tem reajuste anual a conferir neste mês.</td></tr>
+        <tr><td><b>Não gerado</b></td><td>O mês ainda não foi criado. Use o botão <span class="botao">Gerar … em N contratos</span>.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="cadastros">Cadastros e contratos</h2>
+    <p>Cadastre nesta ordem, porque cada item usa o anterior:</p>
+    <ol class="passos">
+      <li><b>Clientes (locadores)</b>: inclua os dados bancários para o repasse.</li>
+      <li><b>Imóveis</b>: cada um ligado ao seu cliente.</li>
+      <li><b>Locatários</b>.</li>
+      <li><b>Contratos</b>: imóvel, locatário, aluguel, vencimento, reajuste, taxa de administração e encargos mensais.</li>
+    </ol>
+    <figure><img src="img/cadastro-contrato.jpg" alt="Formulário de contrato com imóvel, cliente, locatário, prazo e valores" loading="lazy">
+      <figcaption>Ao escolher o imóvel, o cliente é preenchido sozinho. Informe se o aluguel vence no próprio mês ou no mês seguinte.</figcaption></figure>
+    <figure><img src="img/cadastro-contrato-2.jpg" alt="Continuação do formulário: taxa de administração, encargos mensais e encargos moratórios" loading="lazy">
+      <figcaption><b>Encargos mensais</b>: condomínio, IPTU, seguro… com o valor <b>cobrado do locatário</b> e o valor <b>pago pela administradora</b>. Para contratos antigos, informe o <b>primeiro mês do controle</b> e o <b>saldo inicial em conta</b>.</figcaption></figure>
+    <p>Clique num contrato para ver o resumo e o extrato mês a mês:</p>
+    <figure><img src="img/contrato.jpg" alt="Tela do contrato com saldo, débito em atraso, dados e extrato mês a mês" loading="lazy">
+      <figcaption>No alto: <span class="botao">Editar contrato</span>, <span class="botao">Cálculo do débito</span> e <span class="botao">Relatório PDF</span>. Embaixo, cada mês com o que foi devido, recebido, pago, repassado e o saldo.</figcaption></figure>
+
+    <h2 id="mes">Lançar o mês</h2>
+    <p>Cada mês do contrato tem uma tela própria. Para criar o mês, clique em <span class="botao">Gerar mês</span> na tela do contrato (ou gere para todos no painel). O mês novo já vem com as rubricas e os valores do mês anterior e com o saldo não repassado.</p>
+
+    <h3>1. Pagamento do locatário</h3>
+    <figure><img src="img/mes-pagamento.jpg" alt="Seção Pagamento do locatário com vencimento, situação e data do pagamento" loading="lazy">
+      <figcaption>Se o mês está vencido e não pago, o app mostra os dias de atraso e o valor atualizado com correção, juros e multa.</figcaption></figure>
+    <ul>
+      <li>Marque <b>Pago</b>, <b>Pago em parte</b> (informe o valor) ou <b>Não pago</b>, com a data do pagamento.</li>
+      <li>Pagou atrasado? Clique em <span class="botao">Calcular</span>: o app preenche multa, juros e correção até a data do pagamento.</li>
+    </ul>
+
+    <h3>2. Rubricas, descontos e reembolsos</h3>
+    <figure><img src="img/mes-rubricas.jpg" alt="Rubricas do mês com valores cobrados e pagos, e a seção de descontos e reembolsos" loading="lazy">
+      <figcaption>Duas colunas: o que é <b>cobrado do locatário</b> e o que é <b>pago pela administradora</b> (nem sempre são iguais).</figcaption></figure>
+    <ul>
+      <li>Ajuste qualquer valor do mês. Use <span class="botao">+ Adicionar rubrica</span> para despesas avulsas (ex.: um conserto pago pela administradora, descontado do cliente).</li>
+      <li><b>Repetir</b>: a rubrica vai para o mês seguinte. <b>Locação</b>: entra na base da taxa de administração.</li>
+      <li><b>Desconto</b> e <b>reembolso ao locatário</b>: abatem o valor devido. O desconto também reduz a base da taxa sobre a locação; o reembolso não reduz.</li>
+    </ul>
+
+    <h3>3. Resumo, repasse e fechamento</h3>
+    <figure><img src="img/mes-resumo.jpg" alt="Resumo e saldo do mês e a seção de repasses ao cliente" loading="lazy">
+      <figcaption>O resumo mostra o cálculo inteiro, do saldo anterior ao saldo em conta.</figcaption></figure>
+    <div class="tabela-rolagem"><table>
+      <tbody>
+        <tr><td></td><td>Saldo anterior (não repassado)</td></tr>
+        <tr><td>+</td><td>Recebido do locatário, mais multa e juros recebidos</td></tr>
+        <tr><td>−</td><td>Pago pela administradora (condomínio, IPTU, consertos…)</td></tr>
+        <tr><td>−</td><td>Taxa de administração</td></tr>
+        <tr><td>−</td><td>Repasses ao cliente (com data)</td></tr>
+        <tr><td>=</td><td><b>Saldo em conta</b>, que passa para o mês seguinte</td></tr>
+      </tbody>
+    </table></div>
+    <ol class="passos">
+      <li>Em <b>Repasses ao cliente</b>, clique em <span class="botao">Repassar todo o saldo disponível</span> (ou informe outro valor) e confira a data. Os dados bancários do cliente aparecem logo acima.</li>
+      <li>Clique em <span class="botao">Salvar</span>, no pé da tela.</li>
+      <li>Quando o mês estiver conferido, clique em <span class="botao">Fechar mês</span>. O mês fica bloqueado para edição e pode ser reaberto se preciso.</li>
+    </ol>
+    <div class="nota dica"><p>Corrigiu um mês antigo? Os saldos dos meses seguintes se recalculam sozinhos.</p></div>
+
+    <h2 id="reajuste">Reajuste anual do aluguel</h2>
+    <p>No mês de reajuste do contrato, aparece um aviso com o índice acumulado dos 12 meses anteriores e o novo valor do aluguel já calculado.</p>
+    <figure><img src="img/mes-reajuste.jpg" alt="Aviso de reajuste anual com o percentual do IGP-M acumulado e o novo valor do aluguel" loading="lazy">
+      <figcaption>Nada é aplicado sem a sua confirmação. O percentual pode ser editado.</figcaption></figure>
+    <ul>
+      <li><span class="botao">Aplicar neste mês</span>: atualiza o mês, o aluguel do contrato e os meses seguintes. Depois, clique em Salvar.</li>
+      <li><span class="botao">Já está aplicado</span>: o valor já foi reajustado.</li>
+      <li><span class="botao">Não aplicar (negociado)</span>: registra que o reajuste deste ano não será aplicado.</li>
+      <li>Se ainda não houver decisão, apenas deixe o aviso: ele continua aparecendo nos meses seguintes.</li>
+    </ul>
+
+    <h2 id="cobranca">Cobrança e inadimplência</h2>
+    <h3>Cálculo do débito de um contrato</h3>
+    <p>Na tela do contrato, clique em <span class="botao">Cálculo do débito</span>. O app lista os meses vencidos e não pagos e atualiza cada um para a data escolhida.</p>
+    <figure><img src="img/debito.jpg" alt="Cálculo do débito com critérios e a tabela de meses em atraso" loading="lazy">
+      <figcaption>Mude a data, os percentuais ou o índice só para este cálculo. Desmarque um mês para tirá-lo, ou use <span class="botao">+ Outro débito</span> para incluir, por exemplo, um conserto.</figcaption></figure>
+    <figure><img src="img/debito-total.jpg" alt="Total do débito com correção, juros, multa e honorários" loading="lazy">
+      <figcaption>Total com correção monetária, juros de mora pro rata die, multa e honorários advocatícios.</figcaption></figure>
+    <ul>
+      <li><span class="botao">Visualizar PDF</span> / <span class="botao">Salvar PDF</span>: demonstrativo para enviar ao locatário ou ao advogado.</li>
+      <li><span class="botao">Salvar planilha Excel</span>: planilha com fórmulas. Alterando multa, juros, honorários ou data no Excel, os valores são recalculados.</li>
+    </ul>
+    <h3>Relatório de inadimplência</h3>
+    <figure><img src="img/inadimplencia.jpg" alt="Relatório de inadimplência agrupado por locatário com totais" loading="lazy">
+      <figcaption>Todos os débitos vencidos até a data escolhida. Filtre por locatário, contrato ou cliente e agrupe como preferir. Clique numa linha para abrir o mês.</figcaption></figure>
+
+    <h2 id="boletos">Boletos (prévia)</h2>
+    <p>Reúne, para cada contrato do mês, os dados que o banco pede para emitir o boleto, cada um com o botão <span class="botao">Copiar</span>. Basta copiar e colar no sistema de boletos do banco.</p>
+    <figure><img src="img/boletos.jpg" alt="Prévia de boletos do mês com os dados de cada contrato e botões de copiar" loading="lazy">
+      <figcaption>Pagador (locatário) e locador com CPF/CNPJ, endereço do pagador, vencimento, valor, o texto em até 3 linhas com as rubricas do mês e as instruções de multa e juros.</figcaption></figure>
+    <ol class="passos">
+      <li>Gere o mês dos contratos (Painel do mês) e confira os valores.</li>
+      <li>Abra <b>Boletos (prévia)</b> no menu e escolha o mês. Por padrão aparecem só os meses ainda não pagos; marque <b>Incluir meses já pagos</b> para ver todos.</li>
+      <li>Em <b>Caracteres por linha do texto</b>, informe o limite do campo de texto do seu banco (por exemplo, 40 ou 80). As rubricas são reorganizadas na hora para caber em 3 linhas; se não couberem, as últimas são somadas em "Outros encargos".</li>
+      <li>Para cada contrato, copie os campos para o sistema do banco, ou use <span class="botao">Copiar tudo</span>.</li>
+    </ol>
+    <p>No mês de um contrato, o botão <span class="botao">Prévia do boleto</span> mostra só aquele contrato:</p>
+    <figure><img src="img/boleto-mes.jpg" alt="Janela com a prévia do boleto de um contrato" loading="lazy">
+      <figcaption>Se o locatário pagou só parte do mês, o valor da prévia é o saldo que falta.</figcaption></figure>
+    <div class="nota dica"><p><b>Muitos boletos?</b> Use <span class="botao">Salvar planilha Excel</span>: ela traz uma linha por boleto, com todas as colunas. Vários bancos aceitam emissão em lote a partir de planilha; nesse caso, basta ajustar as colunas ao modelo do banco.</p></div>
+
+    <h2 id="vigentes">Contratos vigentes</h2>
+    <figure><img src="img/vigentes.jpg" alt="Lista de contratos vigentes com término, vencimento e mês de reajuste" loading="lazy">
+      <figcaption>Ordene pelo nome, imóvel, mês de reajuste, próximo reajuste, dia de vencimento ou término, em ordem crescente ou decrescente. Também dá para clicar no título da coluna.</figcaption></figure>
+    <p>Os avisos ajudam a planejar: <b>Este mês</b> no reajuste e <b>em N dias</b> nos contratos que terminam em até 90 dias.</p>
+
+    <h2 id="relatorios">Relatórios em PDF</h2>
+    <ol class="passos">
+      <li>Em <b>Relatórios em PDF</b>, escolha: por <b>contrato</b>, <b>imóvel</b> ou <b>cliente</b>.</li>
+      <li>Escolha o período (um mês ou vários) e o formato: <b>detalhado</b> (rubricas de cada mês) ou <b>resumido</b> (uma linha por mês).</li>
+      <li><span class="botao">Visualizar PDF</span> abre a prévia; <span class="botao">Salvar PDF</span> grava o arquivo (no Chrome e no Edge do computador, dá para escolher a pasta).</li>
+    </ol>
+    <figure><img src="img/relatorios.jpg" alt="Tela de relatórios com tipo, período e formato" loading="lazy">
+      <figcaption>Atalhos para mês atual, mês anterior, últimos 3 meses e ano atual.</figcaption></figure>
+    <figure><img src="img/previa.jpg" alt="Prévia do relatório em PDF com o cabeçalho da administradora" loading="lazy">
+      <figcaption>A prévia também funciona no celular. De lá, é possível salvar ou abrir o PDF em outra aba.</figcaption></figure>
+    <p>Exemplos de relatórios gerados:</p>
+    <div class="exemplos">
+      <figure><img src="img/pdf-mes.jpg" alt="Demonstrativo mensal de um contrato" loading="lazy"><figcaption>Demonstrativo do mês (detalhado)</figcaption></figure>
+      <figure><img src="img/pdf-demonstrativo.jpg" alt="Demonstrativo do cliente no formato resumido" loading="lazy"><figcaption>Demonstrativo do cliente (resumido)</figcaption></figure>
+      <figure><img src="img/pdf-debito.jpg" alt="Demonstrativo de débito com encargos" loading="lazy"><figcaption>Demonstrativo de débito</figcaption></figure>
+    </div>
+
+    <h2 id="no-celular">No celular</h2>
+    <p>O app funciona no navegador do celular, com o mesmo login. O menu fica no botão ☰, no canto superior esquerdo.</p>
+    <div class="celulares">
+      <figure><img src="img/celular-painel.jpg" alt="Painel do mês no celular" loading="lazy"><figcaption>Painel do mês</figcaption></figure>
+      <figure><img src="img/celular-menu.jpg" alt="Menu aberto no celular" loading="lazy"><figcaption>Menu</figcaption></figure>
+      <figure><img src="img/celular-mes.jpg" alt="Rubricas do mês no celular" loading="lazy"><figcaption>Rubricas do mês</figcaption></figure>
+    </div>
+
+    <h2 id="rotina">Rotina do mês</h2>
+    <p>Uma sugestão de ordem para o trabalho mensal:</p>
+    <div class="rotina">
+      <div><b>Início do mês</b><p>No <b>Painel do mês</b>, clique em <span class="botao">Gerar … em N contratos</span>. Confira os contratos com <b>Reajuste</b>.</p></div>
+      <div><b>A cada pagamento</b><p>No mês do contrato, marque <b>Pago</b> com a data. Lance condomínio, IPTU e despesas pagas. Faça o repasse e salve.</p></div>
+      <div><b>Antes dos vencimentos</b><p>Abra <b>Boletos (prévia)</b> e emita os boletos do mês no banco, copiando os dados de cada contrato.</p></div>
+      <div><b>Após os vencimentos</b><p>Abra <b>Inadimplência</b>, gere o cálculo do débito de quem atrasou e envie a cobrança.</p></div>
+      <div><b>Fim do mês</b><p>Gere os demonstrativos para os clientes, confira e <span class="botao">Feche</span> os meses. O administrador exporta o backup.</p></div>
+    </div>
+
+    <h2 id="duvidas">Dúvidas e problemas</h2>
+    <details><summary>Apareceu "Sem conexão com os dados"</summary>
+      <p>O app não está conseguindo falar com o servidor. Verifique se a janela do servidor está aberta no computador principal (se não estiver, abra o <b>Iniciar servidor.bat</b>) e se você está na rede do escritório. Depois, clique em <span class="botao">Tentar novamente</span>.</p></details>
+    <details><summary>Esqueci a senha</summary>
+      <p>Peça ao administrador: em Administração → Usuários → Editar, ele define uma nova senha. Depois, troque-a em Minha conta.</p></details>
+    <details><summary>Apareceu "foi alterado em outro computador"</summary>
+      <p>Outra pessoa salvou o mesmo cadastro ou o mesmo mês enquanto você editava. O app recarrega os dados para nada ser perdido: confira e refaça a sua alteração.</p></details>
+    <details><summary>Não consigo editar um mês</summary>
+      <p>O mês está fechado. Clique em <span class="botao">Reabrir mês</span>, faça a correção, salve e feche de novo.</p></details>
+    <details><summary>Os dados da administradora não aparecem nos relatórios</summary>
+      <p>Eles precisam ser preenchidos e salvos pelo administrador em Administração (botão Salvar configurações, no pé da tela).</p></details>
+    <details><summary>O locatário pagou um mês atrasado que estava em aberto</summary>
+      <p>Abra aquele mês, marque Pago com a data real, clique em Calcular para os encargos e salve. O valor sai da inadimplência e o saldo dos meses seguintes se ajusta sozinho.</p></details>
+    <details><summary>Não vejo o item Administração no menu</summary>
+      <p>Ele aparece só para administradores. Se você precisa de acesso, peça ao administrador para mudar o seu perfil.</p></details>
+    <details><summary>O botão Copiar não funcionou</summary>
+      <p>Alguns navegadores bloqueiam a cópia automática. Selecione o texto com o mouse (ou toque longo, no celular) e use <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p></details>
+
+    <footer class="rodape-manual">
+      <p>© 2026 Felippe Alvarez. Todos os direitos reservados. Controle de Locações. Utiliza as bibliotecas jsPDF (licença MIT) e pdf.js (licença Apache 2.0). Índices de correção: Banco Central do Brasil (SGS). Detalhes em <b>Sobre e licenças</b> e nos <b>Termos de Uso</b>, no menu do app.</p>
+    </footer>
+  </main>
+</div>
+
+<script>
+// Ampliar capturas ao clicar
+document.addEventListener('click', e => {
+  const img = e.target.closest('figure img');
+  const aberto = document.querySelector('.zoom');
+  if (aberto) { aberto.remove(); return; }
+  if (!img) return;
+  const z = document.createElement('div');
+  z.className = 'zoom';
+  z.setAttribute('role', 'dialog');
+  z.setAttribute('aria-label', 'Imagem ampliada; clique para fechar');
+  const i = document.createElement('img');
+  i.src = img.src; i.alt = img.alt;
+  z.appendChild(i);
+  document.body.appendChild(z);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelector('.zoom')?.remove(); });
+</script>
+
+</body>
+</html>

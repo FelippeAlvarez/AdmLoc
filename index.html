@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f4e79">
+<title>Controle de Locações</title>
+<link rel="icon" href="icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icone.svg">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<header class="topo">
+  <button id="btMenu" class="bt-menu" aria-label="Abrir menu">&#9776;</button>
+  <a class="marca" href="#/painel"><img src="icone.svg" alt=""><span>Controle de Locações</span></a>
+  <div class="topo-dir"><div id="usuarioTopo" class="usuario-topo"></div><div id="statusArmaz" class="status-armaz"></div></div>
+</header>
+<nav id="menu" class="menu">
+  <a href="#/painel" data-rota="painel">Painel do mês</a>
+  <a href="#/vigentes" data-rota="vigentes">Contratos vigentes</a>
+  <a href="#/inadimplencia" data-rota="inadimplencia">Inadimplência</a>
+  <a href="#/boletos" data-rota="boletos">Boletos (prévia)</a>
+  <a href="#/contratos" data-rota="contrat">Contratos</a>
+  <a href="#/imoveis" data-rota="imoveis">Imóveis</a>
+  <a href="#/locadores" data-rota="locadores">Clientes (locadores)</a>
+  <a href="#/locatarios" data-rota="locatarios">Locatários</a>
+  <a href="#/relatorios" data-rota="relatorios">Relatórios em PDF</a>
+  <a href="#/conta" data-rota="conta">Minha conta</a>
+  <a href="#/admin" data-rota="admin" class="so-admin">Administração</a>
+  <a href="manual/index.html" target="_blank" rel="noopener" class="link-manual">Manual de uso ↗</a>
+  <div id="rodapeMenu" class="rodape-menu"></div>
+</nav>
+<div id="fundoMenu" class="fundo-menu"></div>
+<main id="conteudo"><p class="carregando">Carregando…</p></main>
+
+<div id="modal" class="modal" hidden><div class="modal-caixa" id="modalCaixa"></div></div>
+<div id="aviso" class="aviso" role="status"></div>
+<datalist id="dlRubricas"></datalist>
+
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="nuvem-config.js"></script>
+<script src="armazenamento.js"></script>
+<script src="nuvem.js"></script>
+<script src="auth.js"></script>
+<script src="app.js"></script>
+<script src="admin.js"></script>
+<script src="legal.js"></script>
+<script src="boletos.js"></script>
+<script src="relatorio.js"></script>
+<script src="planilha.js"></script>
+<script src="cobranca.js"></script>
+</body>
+</html>
