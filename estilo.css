@@ -371,3 +371,8 @@ body:not(.conectado) .bt-menu { display: none !important; }
 .termos .destaque { background: var(--pri-claro); border-radius: 8px; padding: 10px 12px; }
 .aceite .inline { white-space: normal; }
 .licenca { font-size: 12px; color: var(--suave); text-align: justify; }
+
+/* Convite e instalação do aplicativo */
+.instalar { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--borda, #dde3ea); }
+.instalar .bt-instalar { margin-bottom: 6px; }
+#cvCodigo, #cvGerCod { font-family: ui-monospace, Consolas, monospace; text-transform: uppercase; }

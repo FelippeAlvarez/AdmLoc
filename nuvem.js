@@ -144,6 +144,54 @@ const NuvemDropbox = {
   sair() { localStorage.removeItem('cl-dbx-refresh'); this._token = null; },
 };
 
+/*
+  Convite para conectar aparelhos (publicação com Dropbox fixo).
+  O administrador gera um link + um código de ativação. O link leva o acesso ao Dropbox deste aparelho
+  cifrado (AES-GCM, chave PBKDF2 a partir do código); sem o código, o link não serve para nada.
+  O link vai depois do "#", que o navegador não envia ao site. Envie o link e o código por meios diferentes.
+*/
+const ALFABETO_CODIGO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O, 1/I: fácil de ditar e digitar
+function b64urlParaBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(s + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+}
+const Convite = {
+  async _chave(codigo, sal) {
+    const limpo = String(codigo).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(limpo), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt: sal, iterations: 200000 }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  },
+
+  async gerar() {
+    const refresh = localStorage.getItem('cl-dbx-refresh');
+    if (!refresh) throw new Error('Este aparelho não está conectado ao Dropbox.');
+    const letras = [...crypto.getRandomValues(new Uint8Array(10))].map(b => ALFABETO_CODIGO[b & 31]).join('');
+    const codigo = letras.slice(0, 5) + '-' + letras.slice(5);
+    const sal = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    const dados = new TextEncoder().encode(JSON.stringify({ v: 1, r: refresh }));
+    const cifrado = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await this._chave(codigo, sal), dados));
+    const pacote = new Uint8Array(28 + cifrado.length);
+    pacote.set(sal); pacote.set(iv, 16); pacote.set(cifrado, 28);
+    return { link: urlRetorno() + '#convite=' + b64url(pacote), codigo };
+  },
+
+  // Aceita o link inteiro ou só o trecho depois de "#convite="
+  extrair(texto) { return (String(texto).match(/convite=([\w-]{40,})/) || [])[1] || ''; },
+
+  async ativar(pacoteB64, codigo) {
+    let pacote;
+    try { pacote = b64urlParaBytes(pacoteB64); } catch { pacote = null; }
+    if (!pacote || pacote.length < 45) throw new Error('Link de convite incompleto. Copie o link inteiro que o administrador enviou.');
+    let d;
+    try {
+      const claro = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: pacote.slice(16, 28) }, await this._chave(codigo, pacote.slice(0, 16)), pacote.slice(28));
+      d = JSON.parse(new TextDecoder().decode(claro));
+    } catch { throw new Error('Código de ativação incorreto para este convite.'); }
+    localStorage.setItem('cl-dbx-refresh', d.r);
+    NuvemDropbox._token = null;
+  },
+};
+
 /* ================= Google Drive ================= */
 const PASTA_GOOGLE = 'application/vnd.google-apps.folder';
 

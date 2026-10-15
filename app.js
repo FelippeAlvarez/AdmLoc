@@ -497,6 +497,7 @@ let sujo = false, hashAnterior = location.hash, ignorarHash = false;
 
 window.addEventListener('hashchange', () => {
   if (ignorarHash) { ignorarHash = false; return; }
+  if (dropboxFixo() && Convite.extrair(location.hash)) { location.reload(); return; } // link de convite colado nesta aba
   if (sujo && !confirm('Há alterações não salvas. Sair sem salvar?')) {
     ignorarHash = true;
     location.hash = hashAnterior;
@@ -1366,9 +1367,9 @@ function telaConfig() {
     <div class="acoes-linha">
       <button class="bt" id="btExportar">Exportar backup (arquivo)</button>
       <label class="bt">Importar backup<input type="file" id="arqImportar" accept=".json,application/json" hidden></label>
-      ${Armaz.modo === 'servidor' ? '' : dropboxFixo() ? '<button class="bt perigo" id="btDesconectarDbx">Desconectar este aparelho do Dropbox</button>' : '<button class="bt" id="btTrocar">Trocar local de armazenamento</button>'}
+      ${Armaz.modo === 'servidor' ? '' : dropboxFixo() ? '<button class="bt primario" id="btConvite">Gerar convite para outro aparelho</button><button class="bt perigo" id="btDesconectarDbx">Desconectar este aparelho do Dropbox</button>' : '<button class="bt" id="btTrocar">Trocar local de armazenamento</button>'}
     </div>
-    ${dropboxFixo() ? `<p class="dica">Este aparelho está conectado à pasta <b>${esc(pastaDropboxFixa())}</b> do Dropbox da administradora. Para conectar outro aparelho, abra o app nele e use <b>Conectar este aparelho (administrador)</b>. Aparelho perdido ou de alguém que saiu da equipe: no site do Dropbox (conta da administradora) → Configurações → Aplicativos conectados, remova o aplicativo; todos os aparelhos precisarão ser conectados de novo.</p>` : ''}
+    ${dropboxFixo() ? `<p class="dica">Este aparelho está conectado à pasta <b>${esc(pastaDropboxFixa())}</b> do Dropbox da administradora. Todos os aparelhos usam essa mesma pasta. Para incluir o aparelho de alguém da equipe: crie o usuário (acima) e use <b>Gerar convite para outro aparelho</b>; a pessoa abre o link, digita o código e entra com o login dela. Aparelho perdido ou de alguém que saiu da equipe: no site do Dropbox (conta da administradora) → Configurações → Aplicativos conectados, remova o aplicativo; todos os aparelhos precisarão ser conectados de novo.</p>` : ''}
     ${Armaz.modo !== 'servidor' ? '<p class="dica">Neste modo, os usuários e as permissões são controlados pelo aplicativo. Quem tiver acesso direto à pasta (fora do aplicativo) consegue alterar os arquivos; compartilhe a pasta somente com quem deve ter acesso.</p>' : ''}
   </section>
   ${secaoIndicesHTML()}`;
@@ -1429,6 +1430,7 @@ function telaConfig() {
   ligarIndices();
   $('#btExportar').addEventListener('click', () => executar(exportarBackup));
   $('#arqImportar').addEventListener('change', e => executar(async () => { if (e.target.files[0]) await importarBackup(e.target.files[0]); e.target.value = ''; }));
+  $('#btConvite')?.addEventListener('click', () => executar(gerarConvite));
   $('#btDesconectarDbx')?.addEventListener('click', () => {
     if (!confirm('Desconectar este aparelho do Dropbox? Para voltar a usar o app nele, o administrador terá de conectá-lo de novo com a conta do Dropbox da administradora.')) return;
     sujo = false;
@@ -1478,19 +1480,104 @@ function telaConexaoDropbox() {
   $('#statusArmaz').textContent = '';
   $('#usuarioTopo').innerHTML = '';
   const pronto = !!chavesNuvem().dropbox && nuvemDisponivel();
-  $('#conteudo').innerHTML = `<section class="cartao caixa-login">
+  $('#conteudo').innerHTML = `<section class="cartao caixa-login form">
     <h1>Controle de Locações</h1>
     ${pronto ? `
       <p>Este aparelho ainda não está conectado aos dados da administradora.</p>
-      <p>A conexão é feita <b>uma única vez em cada aparelho</b>, pelo <b>administrador</b>, com a conta do Dropbox da administradora. Depois disso, cada pessoa entra com o próprio login e senha.</p>
-      <div class="acoes-linha"><button class="bt primario" id="btConectarDbx">Conectar este aparelho (administrador)</button></div>
-      <p class="dica">Se você não é o administrador, peça a ele para conectar este aparelho.</p>`
+      <p><b>Recebeu um convite do administrador?</b> Abra o link do convite neste aparelho, ou cole-o abaixo, e digite o código de ativação.</p>
+      <form id="formConvite" class="grade-login">
+        <div class="campo"><label for="cvLink">Link do convite</label><input id="cvLink" autocapitalize="off" autocomplete="off" placeholder="https://…#convite=…"></div>
+        <div class="campo"><label for="cvCodigo">Código de ativação</label><input id="cvCodigo" autocapitalize="characters" autocomplete="off" placeholder="XXXXX-XXXXX"></div>
+        <button class="bt primario" type="submit">Ativar este aparelho</button>
+      </form>
+      <h3 class="sec">Administrador</h3>
+      <p class="dica">No primeiro aparelho, o administrador conecta com a conta do Dropbox da administradora. Nos demais, basta enviar um convite (Administração › Armazenamento dos dados).</p>
+      <div class="acoes-linha"><button class="bt" id="btConectarDbx">Conectar com a conta do Dropbox (administrador)</button></div>`
       : '<p class="alerta">O aplicativo ainda não foi configurado para acessar os dados. Avise o administrador.</p>'}
+    ${dicaInstalarHTML()}
   </section>`;
+  ligarInstalar();
   $('#btConectarDbx')?.addEventListener('click', () => executar(async () => {
     if (NuvemDropbox.temAcesso()) return conectarDropbox();
     await NuvemDropbox.entrar();
   }));
+  $('#formConvite')?.addEventListener('submit', e => {
+    e.preventDefault();
+    executar(async () => {
+      const pacote = Convite.extrair($('#cvLink').value);
+      if (!pacote) throw new Error('Cole o link do convite enviado pelo administrador.');
+      await ativarConvite(pacote, $('#cvCodigo').value);
+    });
+  });
+}
+
+// Aberto pelo link do convite (#convite=...): só pede o código de ativação
+function telaConvite(pacote) {
+  document.body.classList.remove('conectado', 'admin', 'menu-aberto');
+  $('#statusArmaz').textContent = '';
+  $('#usuarioTopo').innerHTML = '';
+  $('#conteudo').innerHTML = `<section class="cartao caixa-login form">
+    <h1>Controle de Locações</h1>
+    <p>Você recebeu um convite para usar o aplicativo neste aparelho.</p>
+    <form id="formConvite" class="grade-login">
+      <div class="campo"><label for="cvCodigo">Código de ativação (enviado pelo administrador)</label><input id="cvCodigo" required autocapitalize="characters" autocomplete="off" placeholder="XXXXX-XXXXX"></div>
+      <button class="bt primario" type="submit">Ativar este aparelho</button>
+    </form>
+    <p class="dica">Depois de ativar, entre com o login e a senha que o administrador criou para você.</p>
+    ${dicaInstalarHTML()}
+  </section>`;
+  ligarInstalar();
+  $('#cvCodigo').focus();
+  $('#formConvite').addEventListener('submit', e => { e.preventDefault(); executar(() => ativarConvite(pacote, $('#cvCodigo').value)); });
+}
+
+async function ativarConvite(pacote, codigo) {
+  if (!String(codigo).trim()) throw new Error('Digite o código de ativação.');
+  await Convite.ativar(pacote, codigo);
+  history.replaceState(null, '', location.pathname);
+  try { await conectarDropbox(); }
+  catch (e) {
+    NuvemDropbox.sair();
+    throw new Error('O convite foi aceito, mas o acesso ao Dropbox não funcionou (' + e.message + '). Peça um convite novo ao administrador.');
+  }
+}
+
+/* ---------- Instalar o aplicativo (ícone na área de trabalho / tela inicial) ---------- */
+let pedidoInstalar = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); pedidoInstalar = e; $$('.bt-instalar').forEach(b => { b.hidden = false; }); });
+window.addEventListener('appinstalled', () => { pedidoInstalar = null; $$('.bt-instalar').forEach(b => { b.hidden = true; }); });
+const appInstalado = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function dicaInstalarHTML() {
+  if (appInstalado()) return '';
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  return `<div class="instalar"><button type="button" class="bt bt-instalar"${pedidoInstalar ? '' : ' hidden'}>Instalar o aplicativo neste aparelho</button>
+    <p class="dica">${ios
+      ? 'Para ter o ícone na tela inicial do iPhone/iPad: no Safari, toque em <b>Compartilhar</b> › <b>Adicionar à Tela de Início</b>. <b>Faça isso antes de ativar o convite</b> e ative-o pelo ícone instalado (o iPhone guarda o acesso do ícone separado do Safari): abra o ícone e cole o link do convite.'
+      : 'Para ter o ícone na área de trabalho ou na tela inicial: no Chrome ou no Edge, use o botão acima ou o menu do navegador › <b>Instalar</b> (ou <b>Adicionar à tela inicial</b>, no celular).'}</p></div>`;
+}
+function ligarInstalar() {
+  $$('.bt-instalar').forEach(b => b.addEventListener('click', async () => {
+    if (!pedidoInstalar) return;
+    pedidoInstalar.prompt();
+    await pedidoInstalar.userChoice.catch(() => null);
+    pedidoInstalar = null;
+    b.hidden = true;
+  }));
+}
+
+// Administrador: gera o link + código para conectar outro aparelho sem a conta do Dropbox
+async function gerarConvite() {
+  const { link, codigo } = await Convite.gerar();
+  abrirModal(`<div class="modal-cab"><h2>Convite para conectar um aparelho</h2><button class="bt-x" data-fechar title="Fechar">&times;</button></div>
+    <p>Envie à pessoa o <b>link</b> e, <b>por outro meio</b>, o <b>código de ativação</b> (ex.: link por e-mail e código por telefone ou mensagem). Ela abre o link no aparelho, digita o código e depois entra com o login e a senha que você criou para ela em Usuários.</p>
+    <div class="campo"><label>Link do convite</label><div class="acoes-linha"><input id="cvGerLink" readonly value="${esc(link)}" style="flex:1"><button type="button" class="bt" id="btCopLink">Copiar link</button></div></div>
+    <div class="campo"><label>Código de ativação</label><div class="acoes-linha"><input id="cvGerCod" readonly value="${esc(codigo)}" style="font-size:1.3em;letter-spacing:.08em;max-width:12em"><button type="button" class="bt" id="btCopCod">Copiar código</button></div></div>
+    <p class="alerta">Link + código dão acesso aos <b>arquivos</b> de dados neste Dropbox (o login e a senha de cada pessoa continuam valendo dentro do app). Não envie os dois juntos nem para quem não é da equipe. Cada convite tem um código diferente; gere um para cada aparelho.</p>
+    <p class="dica">Para cortar o acesso de todos os aparelhos (ex.: celular perdido): no site do Dropbox da administradora › Configurações › Aplicativos conectados, remova o aplicativo; depois conecte este aparelho de novo e gere convites novos.</p>
+    <div class="acoes-linha"><span class="espaco"></span><button type="button" class="bt primario" data-fechar>Fechar</button></div>`);
+  const copiar = async (txt, msg) => { if (await copiarTexto(txt)) aviso(msg); else aviso('Não foi possível copiar; selecione o texto e copie manualmente.', 'erro'); };
+  $('#btCopLink').addEventListener('click', () => copiar(link, 'Link copiado.'));
+  $('#btCopCod').addEventListener('click', () => copiar(codigo, 'Código copiado.'));
 }
 
 async function telaConexao() {
@@ -1633,6 +1720,11 @@ async function iniciar() {
       return await conectarDropbox();
     }
     // Publicação com Dropbox fixo: ignora qualquer outro modo guardado neste navegador
+    const convite = dropboxFixo() && Convite.extrair(location.hash);
+    if (convite) {
+      if (!NuvemDropbox.temAcesso()) return telaConvite(convite);
+      history.replaceState(null, '', location.pathname); // aparelho já conectado: ignora o convite
+    }
     if (dropboxFixo()) return NuvemDropbox.temAcesso() ? await conectarDropbox() : telaConexaoDropbox();
     const modo = localStorage.getItem('cl-modo');
     if (modo === 'local') { Armaz.modo = 'local'; return await conectado(); }

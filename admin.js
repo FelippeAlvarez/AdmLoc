@@ -52,7 +52,8 @@ async function telaLogin(mensagem) {
         <label class="inline"><input type="checkbox" id="lgLembrar"> Manter conectado neste aparelho</label>
         <button class="bt primario" type="submit">Entrar</button>
       </form>
-      <p class="dica">Esqueceu a senha? Peça ao administrador para definir uma nova.</p>${outroLocal}</section>`;
+      <p class="dica">Esqueceu a senha? Peça ao administrador para definir uma nova.</p>${outroLocal}${dropboxFixo() ? dicaInstalarHTML() : ''}</section>`;
+    ligarInstalar();
     ($('#lgLogin').value ? $('#lgSenha') : $('#lgLogin')).focus();
     $('#formLogin').addEventListener('submit', e => {
       e.preventDefault();

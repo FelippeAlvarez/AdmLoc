@@ -153,6 +153,7 @@ details p { margin: 8px 0 0; }
       <li><a href="#usuarios">4. Usuários</a></li>
       <li><a href="#servidor">5. Servidor e rede</a></li>
       <li><a href="#celular-fora">6. Acesso de fora</a></li>
+      <li><a href="#internet">6A. Versão na internet</a></li>
       <li><a href="#backup">7. Backup</a></li>
       <li><a href="#atualizar">8. Atualizar o app</a></li>
     </ol>
@@ -274,7 +275,29 @@ details p { margin: 8px 0 0; }
       <li><b>No escritório (mesmo Wi-Fi):</b> no celular, abra o endereço mostrado na seção Servidor (ex.: <code>http://192.168.0.10:8080</code>) no Chrome ou no Safari e use "Adicionar à tela inicial" para criar um ícone.</li>
       <li><b>Fora do escritório:</b> instale o <a href="https://tailscale.com" rel="noopener">Tailscale</a> (gratuito) no computador do servidor e no celular ou notebook, com a mesma conta. Depois, acesse <code>http://ENDERECO-TAILSCALE-DO-SERVIDOR:8080</code>. Não é preciso mexer no roteador.</li>
     </ul>
-    <div class="nota dica"><p><b>Alternativa sem servidor:</b> os dados também podem ficar no Dropbox ou no Google Drive, com o app publicado na internet. O passo a passo está no arquivo <code>README.md</code> da pasta do app (seção "Dados na nuvem").</p></div>
+    <div class="nota dica"><p><b>Alternativa sem servidor:</b> a versão na internet, com os dados no Dropbox da administradora (próxima seção).</p></div>
+
+    <h2 id="internet">6A. Versão na internet (dados no Dropbox)</h2>
+    <p>O app também funciona direto no navegador, sem servidor, pelo endereço <code>https://felippealvarez.github.io/AdmLoc/</code>. Os dados ficam numa <b>única pasta</b> do Dropbox da administradora (<code>Aplicativos/AdmLoc ASA Controle de Locacoes/Locacoes</code>), e toda a equipe trabalha nela. Ninguém escolhe pasta: o local é fixo.</p>
+    <h3>Primeiro aparelho (administrador)</h3>
+    <ol class="passos">
+      <li>Abra o endereço e clique em <span class="botao">Conectar com a conta do Dropbox (administrador)</span>. Entre com a conta do Dropbox da administradora e autorize.</li>
+      <li>Para trazer os dados do servidor: antes de criar qualquer usuário, copie <b>todo o conteúdo</b> da pasta de dados do servidor (inclusive <code>usuarios.json</code>) para a pasta <code>Aplicativos/AdmLoc ASA Controle de Locacoes/Locacoes</code> do Dropbox e recarregue a página. Os mesmos logins e senhas continuam valendo.</li>
+      <li>Sem dados anteriores: crie o administrador na tela de primeiro acesso.</li>
+    </ol>
+    <h3>Aparelhos da equipe (convite)</h3>
+    <ol class="passos">
+      <li>Em <b>Administração › Usuários</b>, crie o usuário da pessoa.</li>
+      <li>Em <b>Administração › Armazenamento dos dados</b>, clique em <span class="botao">Gerar convite para outro aparelho</span>.</li>
+      <li>Envie o <b>link</b> por um meio (ex.: e-mail) e o <b>código de ativação</b> por outro (ex.: telefone ou mensagem).</li>
+      <li>A pessoa abre o link no aparelho dela, digita o código e entra com o login e a senha. Pronto: daí em diante, ela só vê a tela de login.</li>
+    </ol>
+    <h3>Ícone do aplicativo</h3>
+    <ul>
+      <li><b>Computador (Chrome ou Edge) e Android:</b> use o botão <span class="botao">Instalar o aplicativo neste aparelho</span> da tela de entrada ou, no menu do navegador, <b>Instalar</b> / <b>Adicionar à tela inicial</b>.</li>
+      <li><b>iPhone/iPad:</b> no Safari, <b>Compartilhar › Adicionar à Tela de Início</b> <b>antes</b> de ativar o convite. Depois, abra o ícone, cole o link do convite no campo <b>Link do convite</b> e digite o código (o iPhone guarda o acesso do ícone separado do Safari).</li>
+    </ul>
+    <div class="nota atencao"><p><b>Segurança:</b> link + código dão acesso aos arquivos de dados; envie-os separados e só para a equipe. Aparelho perdido ou pessoa que saiu: desative o usuário e, se necessário, remova o aplicativo em <b>Dropbox › Configurações › Aplicativos conectados</b> (todos os aparelhos precisarão de convite novo). Depois de passar para a versão na internet, não use mais o servidor antigo: seriam duas bases separadas.</p></div>
 
     <h2 id="backup">7. Backup e segurança</h2>
     <figure><img src="img/admin-armazenamento.jpg" alt="Seção Armazenamento dos dados com exportar e importar backup" loading="lazy">
