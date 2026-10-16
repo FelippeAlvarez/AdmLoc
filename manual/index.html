@@ -167,7 +167,7 @@ details p { margin: 8px 0 0; }
       <li><a href="#cobranca">Cobrança e inadimplência</a></li>
       <li><a href="#boletos">Boletos (prévia)</a></li>
       <li><a href="#vigentes">Contratos vigentes</a></li>
-      <li><a href="#relatorios">Relatórios em PDF</a></li>
+      <li><a href="#relatorios">Relatórios</a></li>
       <li><a href="#no-celular">No celular</a></li>
       <li><a href="#rotina">Rotina do mês</a></li>
       <li><a href="#duvidas">Dúvidas e problemas</a></li>
@@ -374,6 +374,7 @@ details p { margin: 8px 0 0; }
       <li>Marque <b>Pago</b>, <b>Pago em parte</b> (informe o valor) ou <b>Não pago</b>, com a data do pagamento.</li>
       <li>Pagou atrasado? Clique em <span class="botao">Calcular</span>: o app preenche multa, juros e correção até a data do pagamento.</li>
     </ul>
+    <div class="nota dica"><p><b>Pagamento em atraso, feito num mês posterior</b> (ex.: aluguel de agosto pago em 15 de outubro): registre o pagamento no mês de referência (agosto), como sempre. O valor e a taxa de administração entram na prestação de contas <b>do mês do pagamento</b> (outubro), no item "Recebimentos de meses anteriores"; a prestação de agosto não muda e informa onde o pagamento foi lançado. Se agosto já estiver fechado, não é preciso reabri-lo. Vale para pagamentos a partir da data definida em <b>Administração › Pagamentos em atraso na prestação de contas</b>.</p></div>
 
     <h3>2. Rubricas, descontos e reembolsos</h3>
     <figure><img src="img/mes-rubricas.jpg" alt="Rubricas do mês com valores cobrados e pagos, e a seção de descontos e reembolsos" loading="lazy">
@@ -450,9 +451,11 @@ details p { margin: 8px 0 0; }
       <figcaption>Ordene pelo nome, imóvel, mês de reajuste, próximo reajuste, dia de vencimento ou término, em ordem crescente ou decrescente. Também dá para clicar no título da coluna.</figcaption></figure>
     <p>Os avisos ajudam a planejar: <b>Este mês</b> no reajuste e <b>em N dias</b> nos contratos que terminam em até 90 dias.</p>
 
-    <h2 id="relatorios">Relatórios em PDF</h2>
+    <h2 id="relatorios">Relatórios</h2>
+    <p>Em <b>Relatórios</b>, escolha o relatório no primeiro campo. Todos têm <span class="botao">Visualizar PDF</span>, <span class="botao">Salvar PDF</span> e <span class="botao">Exportar Excel</span>.</p>
+    <h3>Demonstrativo (prestação de contas)</h3>
     <ol class="passos">
-      <li>Em <b>Relatórios em PDF</b>, escolha: por <b>contrato</b>, <b>imóvel</b> ou <b>cliente</b>.</li>
+      <li>Escolha: por <b>contrato</b>, <b>imóvel</b> ou <b>cliente</b>.</li>
       <li>Escolha o período (um mês ou vários) e o formato: <b>detalhado</b> (rubricas de cada mês) ou <b>resumido</b> (uma linha por mês).</li>
       <li><span class="botao">Visualizar PDF</span> abre a prévia; <span class="botao">Salvar PDF</span> grava o arquivo (no Chrome e no Edge do computador, dá para escolher a pasta).</li>
     </ol>
@@ -466,6 +469,22 @@ details p { margin: 8px 0 0; }
       <figure><img src="img/pdf-demonstrativo.jpg" alt="Demonstrativo do cliente no formato resumido" loading="lazy"><figcaption>Demonstrativo do cliente (resumido)</figcaption></figure>
       <figure><img src="img/pdf-debito.jpg" alt="Demonstrativo de débito com encargos" loading="lazy"><figcaption>Demonstrativo de débito</figcaption></figure>
     </div>
+
+    <h3>Demais relatórios</h3>
+    <div class="tabela-rolagem"><table>
+      <thead><tr><th>Relatório</th><th>O que mostra</th></tr></thead>
+      <tbody>
+        <tr><td><b>Clientes e seus imóveis</b></td><td>Para cada cliente: imóveis cadastrados, com e sem contrato ativo, e a soma dos aluguéis ativos. Opção de listar os imóveis de cada cliente, com situação, locatário, aluguel e vigência.</td></tr>
+        <tr><td><b>Relação de imóveis</b></td><td>Todos os imóveis, só os com contrato ativo ou só os sem; agrupados por cliente ou por cidade e bairro.</td></tr>
+        <tr><td><b>Taxa de administração recebida</b></td><td>Consolidado por mês, por cliente, por contrato ou por inquilino, com opção de detalhar mês a mês. Conta pelo <b>mês do pagamento</b> (caixa) ou pelo mês de referência.</td></tr>
+        <tr><td><b>Informe de rendimentos (IR)</b></td><td>Por cliente e ano: aluguéis, multa e juros, outros valores, taxa de administração, despesas pagas e repasses, mês a mês, e os valores por locatário. Um cliente ou todos (um por página).</td></tr>
+        <tr><td><b>Conferência para a DIMOB</b></td><td>Por contrato e ano: locador, locatário (com CPF/CNPJ), imóvel, aluguéis recebidos e comissão. No Excel, também mês a mês. Serve para conferência; não substitui o programa da Receita.</td></tr>
+        <tr><td><b>Repasses e saldos a repassar</b></td><td>Repasses feitos no período (por cliente, contrato ou data) e o saldo em conta atual de cada contrato.</td></tr>
+        <tr><td><b>Contratos a vencer e reajustes</b></td><td>Contratos ativos com término nos próximos dias (e os de prazo já encerrado) e os reajustes anuais próximos.</td></tr>
+        <tr><td><b>Vacância</b></td><td>Imóveis sem contrato ativo, desde quando e há quantos dias.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="dica">Contrato ativo é o que está com situação <b>Ativo</b> no cadastro, mesmo com o prazo encerrado. O informe de rendimentos e a DIMOB são documentos auxiliares: confira os critérios com o contador.</p>
 
     <h2 id="no-celular">No celular</h2>
     <p>O app funciona no navegador do celular, com o mesmo login. O menu fica no botão ☰, no canto superior esquerdo.</p>

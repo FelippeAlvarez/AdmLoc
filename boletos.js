@@ -56,7 +56,7 @@ function dadosBoleto(ct, ym, mes, k) {
   ];
   // A referência abre a primeira linha
   if (itens.length) itens[0] = { ...itens[0], rotulo: `Ref. ${mesNum(ym)}: ${itens[0].rotulo}` };
-  if (k.situacao === 'parcial') itens.push({ rotulo: 'Já pago', valor: -r2(k.principalRecebido) });
+  if (k.situacao === 'parcial') itens.push({ rotulo: 'Já pago', valor: -r2(k.diferido ? k.diferido.principal : k.principalRecebido) });
   const p = paramsMora(ct);
   const endereco = [descImovel(im), im.cep ? 'CEP ' + im.cep : ''].filter(Boolean).join(' - ');
   return {

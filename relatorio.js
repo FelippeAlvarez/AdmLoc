@@ -238,7 +238,8 @@ function blocoContratoPDF(P, ct) {
   P.y += h + 5;
 }
 
-const descPagto = (k, m) => k.situacao === 'pago' ? 'Pago pelo locatário' + (m.recebidoEm ? ' em ' + fmtData(m.recebidoEm) : '')
+const descPagto = (k, m) => k.diferido ? `${k.situacao === 'parcial' ? 'Pago em parte' : 'Pago pelo locatário'} em ${fmtData(m.recebidoEm)} (em atraso: lançado em ${mesNum(k.diferido.ym)})`
+  : k.situacao === 'pago' ? 'Pago pelo locatário' + (m.recebidoEm ? ' em ' + fmtData(m.recebidoEm) : '')
   : k.situacao === 'parcial' ? 'Pago em parte' + (m.recebidoEm ? ' em ' + fmtData(m.recebidoEm) : '')
   : 'Não pago pelo locatário';
 const rotuloAjuste = a => (a.tipo === 'reembolso' ? '(-) Reembolso ao locatário' : '(-) Desconto ao locatário') + (a.descricao ? ': ' + a.descricao : '');
@@ -246,7 +247,7 @@ const rotuloAjuste = a => (a.tipo === 'reembolso' ? '(-) Reembolso ao locatário
 function blocoMesPDF(P, x) {
   const m = x.mes, k = x.c, ajustes = m.ajustes || [];
   // Mantém o mês inteiro (tabela + resumo) na mesma página quando ele cabe numa página
-  const altura = 7 + ((m.linhas || []).length + ajustes.length + 4) * 5.6 + (11 + Math.max(1, (m.repasses || []).length)) * 5.5 + 10;
+  const altura = 7 + ((m.linhas || []).length + ajustes.length + 4) * 5.6 + (11 + 2 * (k.anteriores || []).length + Math.max(1, (m.repasses || []).length)) * 5.5 + 10;
   if (altura < P.H - P.rodape - 40) P.espaco(altura); else P.espaco(40);
   subtituloPDF(P, 'Referência ' + mesNum(x.ym),
     [x.venc ? 'Vencimento ' + fmtData(x.venc) : '', descPagto(k, m), m.fechado ? 'Mês fechado' : 'Mês não fechado'].filter(Boolean).join('   ·   '));
@@ -262,14 +263,17 @@ function blocoMesPDF(P, x) {
     P.y += 2;
   }
   const reps = (m.repasses || []).map(r => [`(-) Repasse ao cliente em ${fmtData(r.data)}${r.obs ? ' - ' + r.obs : ''}`, r.valor]);
+  const anteriores = (k.anteriores || []).map(v => [`(+) Recebido em ${fmtData(v.recebidoEm)}, referente a ${mesNum(v.ym)} (pagamento em atraso${v.encargos ? `; inclui multa, juros e correção de R$ ${fmtNum(v.encargos)}` : ''})`, v.recebido]);
   resumoPDF(P, [
     ['Saldo anterior (não repassado)', k.saldoAnterior],
     ['Total devido pelo locatário no mês', k.devido],
-    ['(+) Recebido do locatário', k.principalRecebido],
+    [k.diferido ? `(+) Recebido do locatário neste mês (pago em ${fmtData(k.diferido.recebidoEm)}: R$ ${fmtNum(k.diferido.recebido)}, lançado na prestação de contas de ${mesNum(k.diferido.ym)})` : '(+) Recebido do locatário', k.principalRecebido],
     ...(k.encargosRecebidos ? [['(+) Multa, juros e correção recebidos', k.encargosRecebidos]] : []),
+    ...anteriores,
     ['(-) Total pago pela administradora', k.pago],
     ['(=) Saldo líquido do mês', k.liquido, 'b'],
-    [`(-) Taxa de administração: ${fmtPct(m.taxaAdm)}% sobre ${m.baseTaxa === 'total' ? 'o total recebido' : 'a locação recebida'} (base ${fmtNum(k.baseTaxa)})`, k.taxa],
+    [`(-) Taxa de administração: ${fmtPct(m.taxaAdm)}% sobre ${m.baseTaxa === 'total' ? 'o total recebido' : 'a locação recebida'} (base ${fmtNum(k.baseTaxa)})`, k.taxaMes],
+    ...(anteriores.length ? [['(-) Taxa de administração sobre os recebimentos de meses anteriores', k.taxaAnteriores]] : []),
     ['(=) Saldo do mês', k.saldoMes, 'b'],
     ['Disponível para repasse', k.disponivel],
     ...(reps.length ? reps : [['(-) Repassado ao cliente', 0]]),

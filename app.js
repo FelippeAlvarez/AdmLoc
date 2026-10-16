@@ -105,6 +105,8 @@ function normalizarConfig(c) {
     rubricas: Array.isArray(c.rubricas) && c.rubricas.length ? c.rubricas : RUBRICAS_PADRAO.map(r => ({ ...r })),
     // Padrões dos encargos moratórios (cada contrato pode ter os seus)
     moratorios: { multa: 10, juros: 1, honorarios: 10, indice: 'IGP-M', ignorarNegativos: false, ...(c.moratorios || {}) },
+    // Pagamentos em atraso feitos a partir desta data entram na prestação de contas do mês do pagamento ('' = nunca)
+    atrasoNoMesDoPagamento: c.atrasoNoMesDoPagamento === undefined ? '2026-11-01' : c.atrasoNoMesDoPagamento,
   };
 }
 
@@ -245,37 +247,85 @@ function vencimentoMes(ct, ym, mes) {
   return `${ref}-${p2(Math.min(Number(ct.diaVencimento) || 10, ultimo))}`;
 }
 
-function calcMes(mes, saldoAnterior) {
-  let cob = 0, pag = 0, loc = 0;
-  for (const l of mes.linhas || []) {
-    const c = cent(l.cobrado), p = cent(l.pago);
-    cob += c; pag += p;
-    if (l.locacao) loc += c;
-  }
+/*
+  Pagamento em atraso: registrado no mês de referência, mas lançado (saldo, taxa) na prestação de contas
+  do mês em que foi pago, a partir da data configurada pelo administrador (pagamentos anteriores ficam
+  no mês de referência, como sempre foram). Pagamento no próprio mês ou antecipado: mês de referência.
+*/
+const inicioAtrasoNoPagamento = () => D.config?.atrasoNoMesDoPagamento || '';
+function mesDoLancamento(mes, ym) {
+  const desde = inicioAtrasoNoPagamento(), data = mes.recebidoEm || '';
+  if (!desde || !ym || situacaoPagto(mes) === 'aberto' || !data || data < desde) return ym;
+  return data.slice(0, 7) > ym ? data.slice(0, 7) : ym;
+}
+
+// Valores recebidos do locatário no mês (em centavos), sem saldo
+function recebimentoMes(mes) {
+  let cob = 0, loc = 0;
+  for (const l of mes.linhas || []) { const c = cent(l.cobrado); cob += c; if (l.locacao) loc += c; }
+  let desc = 0, reemb = 0;
+  for (const a of mes.ajustes || []) { if (a.tipo === 'reembolso') reemb += cent(a.valor); else desc += cent(a.valor); }
+  const devido = cob - desc - reemb, locLiq = Math.max(0, loc - desc);
+  const sit = situacaoPagto(mes);
+  const principal = sit === 'pago' ? devido : sit === 'parcial' ? Math.max(0, Math.min(cent(mes.valorRecebido), devido)) : 0;
+  const encargos = sit === 'aberto' ? 0 : cent(mes.encargosRecebidos);
+  const recebido = principal + encargos;
+  // Parte do recebido que é locação (rubricas marcadas como Locação, menos descontos), proporcional ao que foi pago
+  const locacao = devido > 0 ? Math.round(locLiq * Math.min(1, principal / devido)) : 0;
+  const base = mes.baseTaxa === 'total' ? recebido : locacao;
+  const taxa = base > 0 ? Math.round(base * (Number(mes.taxaAdm) || 0) / 100) : 0;
+  return { principal, encargos, recebido, locacao, base, taxa };
+}
+
+// ctx: { ym: mês de referência, vindos: recebimentos de meses anteriores lançados neste mês }
+function calcMes(mes, saldoAnterior, ctx = {}) {
+  let cob = 0, pag = 0;
+  for (const l of mes.linhas || []) { cob += cent(l.cobrado); pag += cent(l.pago); }
   // Descontos e reembolsos concedidos ao locatário reduzem o valor devido.
   // O desconto também reduz a base da taxa sobre a locação; o reembolso (de despesa) não.
   let desc = 0, reemb = 0;
   for (const a of mes.ajustes || []) { if (a.tipo === 'reembolso') reemb += cent(a.valor); else desc += cent(a.valor); }
   const devido = cob - desc - reemb;
-  const locLiq = Math.max(0, loc - desc);
-  // Recebido do locatário: tudo (pago), parte (parcial) ou nada (em aberto), mais multa/juros/correção recebidos
   const sit = situacaoPagto(mes);
-  const principal = sit === 'pago' ? devido : sit === 'parcial' ? Math.max(0, Math.min(cent(mes.valorRecebido), devido)) : 0;
-  const encargos = sit === 'aberto' ? 0 : cent(mes.encargosRecebidos);
-  const recebido = principal + encargos;
-  // Taxa sobre todo o valor recebido, ou só sobre a parte de locação do que foi recebido
-  const base = mes.baseTaxa === 'total' ? recebido : (devido > 0 ? Math.round(locLiq * Math.min(1, principal / devido)) : 0);
-  const taxa = base > 0 ? Math.round(base * (Number(mes.taxaAdm) || 0) / 100) : 0;
+  // Recebido do locatário: tudo (pago), parte (parcial) ou nada (em aberto), mais multa/juros/correção recebidos.
+  // Taxa sobre todo o valor recebido, ou só sobre a parte de locação do que foi recebido.
+  const r = recebimentoMes(mes);
+  const f = v => v / 100;
+  // Pago em atraso, num mês posterior: entra na prestação de contas daquele mês, não nesta
+  const lanc = mesDoLancamento(mes, ctx.ym);
+  const diferido = lanc !== ctx.ym;
+  const proprio = diferido ? { principal: 0, encargos: 0, recebido: 0, base: 0, taxa: 0 } : r;
+  const vindos = (ctx.vindos || []).map(v => ({ ...v, principal: f(v.r.principal), encargos: f(v.r.encargos), recebido: f(v.r.recebido), base: f(v.r.base), taxa: f(v.r.taxa) }));
+  const recAnt = (ctx.vindos || []).reduce((s, v) => s + v.r.recebido, 0), taxaAnt = (ctx.vindos || []).reduce((s, v) => s + v.r.taxa, 0);
+  const recebido = proprio.recebido + recAnt, taxa = proprio.taxa + taxaAnt;
   const liq = recebido - pag, doMes = liq - taxa, ant = cent(saldoAnterior), disp = ant + doMes;
   let rep = 0;
-  for (const r of mes.repasses || []) rep += cent(r.valor);
-  const f = v => v / 100;
+  for (const x of mes.repasses || []) rep += cent(x.valor);
   return {
     situacao: sit, saldoAnterior: f(ant), cobrado: f(cob), descontos: f(desc), reembolsos: f(reemb), devido: f(devido),
-    principalRecebido: f(principal), encargosRecebidos: f(encargos),
-    recebido: f(recebido), emAberto: f(Math.max(0, devido - principal)), pago: f(pag), liquido: f(liq), baseTaxa: f(base), taxa: f(taxa),
+    // Recebido referente a este mês e lançado nele
+    principalRecebido: f(proprio.principal), encargosRecebidos: f(proprio.encargos), baseTaxa: f(proprio.base), taxaMes: f(proprio.taxa),
+    // Pagamento deste mês lançado num mês posterior
+    diferido: diferido ? { ym: lanc, recebidoEm: mes.recebidoEm, principal: f(r.principal), encargos: f(r.encargos), recebido: f(r.recebido), base: f(r.base), taxa: f(r.taxa) } : null,
+    // Recebimentos de meses anteriores lançados neste mês
+    anteriores: vindos, recebidoAnteriores: f(recAnt), taxaAnteriores: f(taxaAnt),
+    // Totais lançados no mês (o que entra no saldo)
+    recebido: f(recebido), taxa: f(taxa),
+    emAberto: f(Math.max(0, devido - r.principal)), pago: f(pag), liquido: f(liq),
     saldoMes: f(doMes), disponivel: f(disp), repassado: f(rep), saldoConta: f(disp - rep),
   };
+}
+
+// Recebimentos de meses anteriores que são lançados em cada mês: { 'AAAA-MM': [{ ym, recebidoEm, r }] }
+function recebimentosDiferidos(ext, exceto) {
+  const mapa = {};
+  for (const [ym, mes] of Object.entries(ext.meses || {})) {
+    if (ym === exceto) continue;
+    const lanc = mesDoLancamento(mes, ym);
+    if (lanc !== ym) (mapa[lanc] = mapa[lanc] || []).push({ ym, recebidoEm: mes.recebidoEm, r: recebimentoMes(mes) });
+  }
+  Object.values(mapa).forEach(l => l.sort((a, b) => comparar(a.ym, b.ym)));
+  return mapa;
 }
 
 function chipPagto(c, venc) {
@@ -289,9 +339,10 @@ function chipPagto(c, venc) {
 // Encadeia os meses: o saldo em conta de um mês é o saldo anterior do mês seguinte
 function calcularExtrato(ct, ext) {
   let saldo = r2(ct.saldoInicial);
+  const vindos = recebimentosDiferidos(ext);
   return Object.keys(ext.meses).sort().map(ym => {
     const mes = ext.meses[ym];
-    const c = calcMes(mes, saldo);
+    const c = calcMes(mes, saldo, { ym, vindos: vindos[ym] });
     saldo = c.saldoConta;
     return { ym, mes, c };
   });
@@ -866,6 +917,7 @@ async function telaMes(cid, ym) {
   const cad = calcularExtrato(ct, ext);
   const idx = cad.findIndex(x => x.ym === ym);
   const saldoAnterior = idx > 0 ? cad[idx - 1].c.saldoConta : r2(ct.saldoInicial);
+  const ctxMes = { ym, vindos: recebimentosDiferidos(ext, ym)[ym] };
   const ehUltimo = ym === yms[yms.length - 1];
   const anterior = idx > 0 ? cad[idx - 1].mes : null;
   const loc = D.locadores[ct.locadorId];
@@ -927,12 +979,14 @@ async function telaMes(cid, ym) {
         <div class="res-l info"><span>Total devido pelo locatário</span><b id="rDev"></b></div>
         <div class="res-l"><span>(+) Recebido do locatário</span><b id="rRec"></b></div>
         <div class="res-l" id="linhaEnc"><span>(+) Multa, juros e correção recebidos</span><b id="rEnc"></b></div>
+        <div class="res-l" id="linhaRecAnt"><span>(+) Recebimentos de meses anteriores (pagos em atraso neste mês)<small id="rRecAntDet"></small></span><b id="rRecAnt"></b></div>
         <div class="res-l"><span>(−) Total pago pela administradora</span><b id="rPag"></b></div>
         <div class="res-l dest"><span>(=) Saldo líquido do mês</span><b id="rLiq"></b></div>
         <div class="res-l taxa"><span>(−) Taxa de administração
           <span class="taxa-ctl"><input id="taxaPct" class="num" inputmode="decimal" value="${fmtPct(ed.taxaAdm)}"> %
           <select id="taxaBase"><option value="locacao"${ed.baseTaxa !== 'total' ? ' selected' : ''}>sobre locação</option><option value="total"${ed.baseTaxa === 'total' ? ' selected' : ''}>sobre todos os valores recebidos</option></select></span>
           <small id="rBase"></small></span><b id="rTaxa"></b></div>
+        <div class="res-l" id="linhaTaxaAnt"><span>(−) Taxa de administração sobre os recebimentos de meses anteriores</span><b id="rTaxaAnt"></b></div>
         <div class="res-l dest"><span>(=) Saldo do mês</span><b id="rMes"></b></div>
         <div class="res-l"><span>Disponível para repasse (saldo anterior + saldo do mês)</span><b id="rDisp"></b></div>
         <div class="res-l"><span>(−) Repassado ao cliente</span><b id="rRep"></b></div>
@@ -1063,14 +1117,17 @@ async function telaMes(cid, ym) {
   }
 
   function atualizarResumo() {
-    const k = calcMes(ed, saldoAnterior);
+    const k = calcMes(ed, saldoAnterior, ctxMes);
     const put = (id, v) => { const e = $('#' + id); e.textContent = fmtMoeda(v); e.classList.toggle('neg', v < 0); };
     $('#totCob').textContent = fmtNum(k.cobrado);
     $('#totPag').textContent = fmtNum(k.pago);
     put('rAnt', k.saldoAnterior); put('rCob', k.cobrado); put('rRec', k.principalRecebido); put('rEnc', k.encargosRecebidos);
     put('rAj', k.descontos + k.reembolsos); put('rDev', k.devido);
     $('#linhaAj').hidden = !(k.descontos + k.reembolsos);
-    put('rPag', k.pago); put('rLiq', k.liquido); put('rTaxa', k.taxa);
+    put('rPag', k.pago); put('rLiq', k.liquido); put('rTaxa', k.taxaMes);
+    put('rRecAnt', k.recebidoAnteriores); put('rTaxaAnt', k.taxaAnteriores);
+    $('#linhaRecAnt').hidden = $('#linhaTaxaAnt').hidden = !k.anteriores.length;
+    $('#rRecAntDet').textContent = k.anteriores.length ? ' ' + k.anteriores.map(v => `${mesNum(v.ym)}: ${fmtMoeda(v.recebido)} em ${fmtData(v.recebidoEm)}`).join(' · ') : '';
     put('rMes', k.saldoMes); put('rDisp', k.disponivel); put('rRep', k.repassado); put('rConta', k.saldoConta); put('rAberto', k.emAberto);
     $('#linhaEnc').hidden = !k.encargosRecebidos;
     $('#linhaAberto').hidden = !k.emAberto;
@@ -1083,12 +1140,15 @@ async function telaMes(cid, ym) {
       info.innerHTML = `<span class="neg">Vencido há ${e.dias} dia${e.dias === 1 ? '' : 's'}.</span> Em aberto: <b>${fmtMoeda(k.emAberto)}</b> · atualizado hoje com correção, juros e multa: <b>${fmtMoeda(e.total)}</b> · <a href="#/contrato/${cid}/debito">cálculo do débito</a>`;
     } else if (k.emAberto > 0) info.textContent = `A vencer em ${fmtData(ed.vencimento)}.`;
     else info.textContent = ed.pagamento === 'pago' && ed.recebidoEm ? `Pago em ${fmtData(ed.recebidoEm)}.` : '';
+    if (k.diferido) info.innerHTML += ` <b>Pagamento em atraso: ${fmtMoeda(k.diferido.recebido)} (taxa ${fmtMoeda(k.diferido.taxa)}) entram na prestação de contas de ${mesNum(k.diferido.ym)}, mês do pagamento; não somam no saldo deste mês.</b>`;
     return k;
   }
 
   function travar() {
     if (!ed.fechado) return;
     $$('#editorMes input, #editorMes select, #editorMes textarea, #editorMes button:not(.livre)').forEach(e => { e.disabled = true; });
+    // Pagamento em atraso (lançado no mês do pagamento) pode ser registrado sem reabrir o mês: não altera esta prestação de contas
+    if (inicioAtrasoNoPagamento()) $$('input[name=sitPagto], #recebidoEm, #valorRecebido, #encRecebidos, #btCalcEnc, #btSalvar').forEach(e => { e.disabled = false; });
   }
 
   renderLinhas();
@@ -1096,7 +1156,7 @@ async function telaMes(cid, ym) {
   renderAjustes();
   renderReajuste();
   atualizarResumo();
-  if (ed.fechado) $('#estadoSalvar').textContent = 'Mês fechado: reabra para alterar.';
+  if (ed.fechado) $('#estadoSalvar').textContent = 'Mês fechado: reabra para alterar.' + (inicioAtrasoNoPagamento() ? ' O pagamento em atraso do locatário pode ser registrado sem reabrir.' : '');
 
   const aoEditarLinha = e => {
     const row = e.target.closest('.lanc[data-i]');
@@ -1151,9 +1211,9 @@ async function telaMes(cid, ym) {
   $('#encRecebidos').addEventListener('input', e => { ed.encargosRecebidos = r2(parseValor(e.target.value)); marcarSujo(); atualizarResumo(); });
   $('#btCalcEnc').addEventListener('click', () => {
     if (!ed.recebidoEm || !ed.vencimento) return aviso('Informe o vencimento e a data do pagamento.', 'erro');
-    const k = calcMes(ed, saldoAnterior);
-    const e = encargosMoratorios(k.principalRecebido, ed.vencimento, ed.recebidoEm, paramsMora(ct));
-    ed.encargosRecebidos = r2(e.total - k.principalRecebido);
+    const k = calcMes(ed, saldoAnterior, ctxMes);
+    const e = encargosMoratorios(k.diferido ? k.diferido.principal : k.principalRecebido, ed.vencimento, ed.recebidoEm, paramsMora(ct));
+    ed.encargosRecebidos = r2(e.total - (k.diferido ? k.diferido.principal : k.principalRecebido));
     $('#encRecebidos').value = ed.encargosRecebidos ? fmtNum(ed.encargosRecebidos) : '';
     marcarSujo(); atualizarResumo();
     aviso(e.dias ? `Pagamento com ${e.dias} dia(s) de atraso: correção ${fmtMoeda(e.correcao)}, juros ${fmtMoeda(e.juros)}, multa ${fmtMoeda(e.multa)}.` : 'Pagamento em dia: sem encargos.');
@@ -1181,7 +1241,7 @@ async function telaMes(cid, ym) {
     $('#repasses .rep:last-child [data-campo=valor]').focus();
   });
   $('#btRepTotal').addEventListener('click', () => {
-    const k = calcMes(ed, saldoAnterior);
+    const k = calcMes(ed, saldoAnterior, ctxMes);
     if (k.saldoConta <= 0) return aviso('Não há saldo disponível para repassar.', 'erro');
     ed.repasses.push({ id: novoId(), data: hoje(), valor: k.saldoConta, obs: '' });
     marcarSujo(); renderRepasses(); atualizarResumo();
@@ -1210,7 +1270,14 @@ async function telaMes(cid, ym) {
   $('#btAddDesc').addEventListener('click', () => novoAjuste('desconto'));
   $('#btAddReemb').addEventListener('click', () => novoAjuste('reembolso'));
 
-  const salvar = async () => {
+  const salvar = async (conferirFechado = true) => {
+    // Mês fechado: só aceita o registro de pagamento que entra na prestação de contas de um mês posterior
+    if (ed.fechado && conferirFechado) {
+      const a = calcMes(mes, saldoAnterior, ctxMes), b = calcMes(ed, saldoAnterior, ctxMes);
+      if (a.principalRecebido !== b.principalRecebido || a.encargosRecebidos !== b.encargosRecebidos || a.taxaMes !== b.taxaMes) {
+        throw new Error(`${nomeMes(ym)} está fechado e este pagamento entraria na prestação de contas dele. Reabra o mês para isso. Sem reabrir, só é possível registrar pagamento feito num mês posterior, a partir de ${fmtData(inicioAtrasoNoPagamento())}.`);
+      }
+    }
     ed.linhas = ed.linhas.filter(l => l.rubrica.trim() || l.cobrado || l.pago);
     if (ed.linhas.some(l => !l.rubrica.trim())) throw new Error('Informe a rubrica de todas as linhas com valor.');
     ed.repasses = ed.repasses.filter(r => r.valor);
@@ -1239,7 +1306,7 @@ async function telaMes(cid, ym) {
   $('#btFechar').addEventListener('click', () => executar(async () => {
     if (!ed.fechado && !confirm(`Fechar ${nomeMes(ym)}? As alterações serão salvas e o mês ficará bloqueado para edição (é possível reabrir depois).`)) return;
     ed.fechado = !ed.fechado;
-    try { await salvar(); } catch (e) { ed.fechado = !ed.fechado; throw e; }
+    try { await salvar(false); } catch (e) { ed.fechado = !ed.fechado; throw e; }
     aviso(ed.fechado ? 'Mês fechado.' : 'Mês reaberto.');
     rotear();
   }));
@@ -1252,7 +1319,7 @@ async function telaMes(cid, ym) {
   }));
   $('#btBoletoMes').addEventListener('click', () => {
     if (sujo) return aviso('Salve as alterações antes de ver a prévia do boleto.', 'erro');
-    mostrarBoleto(D.contratos[cid], ym, ed, calcMes(ed, saldoAnterior));
+    mostrarBoleto(D.contratos[cid], ym, ed, calcMes(ed, saldoAnterior, ctxMes));
   });
   ligarBotoesPDF('pdfMes', async () => {
     if (sujo) throw new Error('Salve as alterações antes de gerar o PDF.');
@@ -1263,11 +1330,13 @@ async function telaMes(cid, ym) {
 /* ================= Relatórios ================= */
 function telaRelatorios(h) {
   const q = new URLSearchParams(h.split('?')[1] || '');
+  const rel = q.get('rel') || 'demonstrativo';
+  if (GERENCIAIS[rel]) return telaRelatorioGerencial(rel);
   const atual = mesAtual();
   const st = { tipo: q.get('tipo') || 'contrato', id: q.get('id') || '', de: q.get('de') || atual, ate: q.get('ate') || q.get('de') || atual };
   const colDe = { contrato: 'contratos', imovel: 'imoveis', locador: 'locadores' };
 
-  $('#conteudo').innerHTML = cabecalho('Relatórios em PDF', 'Demonstrativo mês a mês por contrato, imóvel ou cliente, de um mês ou de um período') + `
+  $('#conteudo').innerHTML = cabecalho('Relatórios', 'Demonstrativo mês a mês por contrato, imóvel ou cliente, de um mês ou de um período') + seletorRelatorioHTML('demonstrativo') + `
   <section class="cartao form">
     <div class="grade-form">
       <div class="campo wfull"><label>Relatório por</label><div class="segmentado" id="tipoRel">
@@ -1298,6 +1367,7 @@ function telaRelatorios(h) {
     $('#alvoRel').innerHTML = '<option value="">— selecione —</option>' + opcoes(colDe[tipo]).map(([v, r]) => `<option value="${esc(v)}"${v === st.id ? ' selected' : ''}>${esc(r)}</option>`).join('');
   };
   preencher();
+  ligarSeletorRelatorio();
   $('#tipoRel').addEventListener('change', () => { st.id = ''; preencher(); });
   $$('[data-per]').forEach(b => b.addEventListener('click', () => {
     const p = b.dataset.per;
@@ -1354,6 +1424,13 @@ function telaConfig() {
       <div class="campo"><label for="m_honorarios">Honorários advocatícios (%)</label><input id="m_honorarios" class="num" inputmode="decimal" value="${fmtPct(cfg.moratorios.honorarios)}"></div>
       <div class="campo"><label for="m_indice">Índice de correção</label><select id="m_indice">${[...Object.keys(SERIES_BCB), 'Nenhum'].map(i => `<option${i === cfg.moratorios.indice ? ' selected' : ''}>${i}</option>`).join('')}</select></div>
       <div class="campo wfull"><label class="inline"><input type="checkbox" id="m_neg"${cfg.moratorios.ignorarNegativos ? ' checked' : ''}> Desconsiderar índices negativos (deflação) na correção</label></div>
+    </div>
+  </section>
+  <section class="cartao form">
+    <h2>Pagamentos em atraso na prestação de contas</h2>
+    <p class="dica">O aluguel pago em atraso, num mês posterior ao de referência, é registrado no mês de referência, mas o valor recebido e a taxa de administração entram na prestação de contas <b>do mês em que foi pago</b>, num bloco “Recebimentos de meses anteriores”. A prestação de contas do mês de referência não muda e informa em que mês o pagamento foi lançado. Vale para pagamentos feitos a partir da data abaixo; os anteriores continuam no mês de referência. Deixe em branco para lançar sempre no mês de referência.</p>
+    <div class="grade-form">
+      <div class="campo"><label for="m_atraso">Pagamentos feitos a partir de</label><input type="date" id="m_atraso" value="${esc(cfg.atrasoNoMesDoPagamento || '')}"></div>
     </div>
   </section>
   </div>
@@ -1423,6 +1500,7 @@ function telaConfig() {
       multa: r2(parseValor($('#m_multa').value)), juros: r2(parseValor($('#m_juros').value)),
       honorarios: r2(parseValor($('#m_honorarios').value)), indice: $('#m_indice').value, ignorarNegativos: $('#m_neg').checked,
     };
+    cfg.atrasoNoMesDoPagamento = $('#m_atraso').value;
     await salvarConfig(cfg);
     sujo = false;
     aviso('Configurações salvas.');
