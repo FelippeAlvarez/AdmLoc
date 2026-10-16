@@ -1364,9 +1364,10 @@ function telaConfig() {
     <p>${esc(Armaz.descricao())}${Armaz.modo === 'servidor' && Armaz.infoServidor?.pasta ? `<br><span class="dica">Pasta no servidor: ${esc(Armaz.infoServidor.pasta)}</span>` : ''}</p>
     ${Armaz.modo === 'local' ? '<p class="alerta">Os dados estão guardados somente neste navegador. Para compartilhar com outros computadores, exporte um backup e importe-o na pasta da rede ou no servidor.</p>' : ''}
     <p class="dica">Uma cópia de segurança de todos os arquivos é feita automaticamente, uma vez por dia, na subpasta <b>_backups</b> da pasta de dados.</p>
+    <p class="dica"><b>Importar</b> aceita o arquivo gerado por Exportar backup ou os arquivos .json da pasta de dados de outra instalação, ou de uma subpasta de _backups (contratos.json, imoveis.json, locadores.json, locatarios.json…): selecione vários de uma vez.</p>
     <div class="acoes-linha">
       <button class="bt" id="btExportar">Exportar backup (arquivo)</button>
-      <label class="bt">Importar backup<input type="file" id="arqImportar" accept=".json,application/json" hidden></label>
+      <label class="bt">Importar backup ou arquivos de dados<input type="file" id="arqImportar" accept=".json,application/json" multiple hidden></label>
       ${Armaz.modo === 'servidor' ? '' : dropboxFixo() ? '<button class="bt primario" id="btConvite">Gerar convite para outro aparelho</button><button class="bt perigo" id="btDesconectarDbx">Desconectar este aparelho do Dropbox</button>' : '<button class="bt" id="btTrocar">Trocar local de armazenamento</button>'}
     </div>
     ${dropboxFixo() ? `<p class="dica">Este aparelho está conectado à pasta <b>${esc(pastaDropboxFixa())}</b> do Dropbox da administradora. Todos os aparelhos usam essa mesma pasta. Para incluir o aparelho de alguém da equipe: crie o usuário (acima) e use <b>Gerar convite para outro aparelho</b>; a pessoa abre o link, digita o código e entra com o login dela. Aparelho perdido ou de alguém que saiu da equipe: no site do Dropbox (conta da administradora) → Configurações → Aplicativos conectados, remova o aplicativo; todos os aparelhos precisarão ser conectados de novo.</p>` : ''}
@@ -1429,7 +1430,7 @@ function telaConfig() {
   }));
   ligarIndices();
   $('#btExportar').addEventListener('click', () => executar(exportarBackup));
-  $('#arqImportar').addEventListener('change', e => executar(async () => { if (e.target.files[0]) await importarBackup(e.target.files[0]); e.target.value = ''; }));
+  $('#arqImportar').addEventListener('change', e => executar(async () => { if (e.target.files.length) await importarBackup(e.target.files); e.target.value = ''; }));
   $('#btConvite')?.addEventListener('click', () => executar(gerarConvite));
   $('#btDesconectarDbx')?.addEventListener('click', () => {
     if (!confirm('Desconectar este aparelho do Dropbox? Para voltar a usar o app nele, o administrador terá de conectá-lo de novo com a conta do Dropbox da administradora.')) return;
@@ -1458,10 +1459,44 @@ async function exportarBackup() {
   baixar(blob, `backup-locacoes-${hoje()}.json`);
 }
 
-async function importarBackup(arq) {
-  let j;
-  try { j = JSON.parse(await arq.text()); } catch { throw new Error('Arquivo inválido.'); }
-  if (j.app !== 'controle-locacoes' || !j.arquivos) throw new Error('Este arquivo não é um backup do Controle de Locações.');
+// Arquivos soltos da pasta de dados (de outra instalação ou de _backups): contratos.json, imoveis.json, extratos etc.
+async function importarArquivosDeDados(lista) {
+  const achados = {}, ignorados = [];
+  let usuarios = null;
+  for (const f of lista) {
+    let j;
+    try { j = JSON.parse(await f.text()); } catch { ignorados.push(f.name); continue; }
+    const nome = (f.name.toLowerCase().match(/^(config|indices|locadores|locatarios|imoveis|contratos|usuarios)(?:\s*\(\d+\))?\.json$/) || [])[1];
+    if (nome === 'usuarios' && j && typeof j.usuarios === 'object') usuarios = j;
+    else if (COLECOES.includes(nome) && j && typeof j.itens === 'object') achados[nome + '.json'] = j;
+    else if ((nome === 'config' || nome === 'indices') && j && typeof j === 'object') achados[nome + '.json'] = j;
+    else if (j && typeof j.contratoId === 'string' && /^[\w-]+$/.test(j.contratoId) && j.meses) achados[`extratos/${j.contratoId}.json`] = j;
+    else ignorados.push(f.name);
+  }
+  const nomes = Object.keys(achados);
+  if (!nomes.length && !usuarios) throw new Error('Nenhum arquivo de dados do Controle de Locações foi reconhecido. Selecione o arquivo de backup (backup-locacoes-….json) ou os arquivos da pasta de dados (contratos.json, imoveis.json, locadores.json, locatarios.json…).');
+  const contagem = c => achados[c + '.json'] ? ` (${Object.keys(achados[c + '.json'].itens).length})` : '';
+  const descr = nomes.map(n => '• ' + n + (n.endsWith('.json') && COLECOES.includes(n.slice(0, -5)) ? contagem(n.slice(0, -5)) : '')).join('\n');
+  if (nomes.length && !confirm(`Importar estes arquivos?\n\n${descr}${ignorados.length ? `\n\nNão reconhecidos (ignorados): ${ignorados.join(', ')}` : ''}\n\nCada arquivo SUBSTITUI o correspondente atual (os demais ficam como estão). Antes, uma cópia dos dados atuais será guardada em _backups.`)) return;
+  const trocarUsuarios = usuarios && Armaz.modo !== 'servidor' && confirm(`Um arquivo de usuários (usuarios.json, ${Object.keys(usuarios.usuarios).length} usuários) também foi selecionado.\n\nSubstituir os usuários e senhas atuais pelos desse arquivo? Se sim, você sairá e entrará de novo com um login desse arquivo.\n\nOK = substituir · Cancelar = manter os usuários atuais`);
+  if (!nomes.length && !trocarUsuarios) return;
+  if (Armaz.modo !== 'local') await copiaDeSeguranca(hoje() + '-antes-da-importacao');
+  for (const [p, v] of Object.entries(achados)) await Armaz.gravar(p, JSON.stringify(v, null, 1));
+  if (trocarUsuarios) {
+    await Armaz.gravar('usuarios.json', JSON.stringify(usuarios, null, 1));
+    aviso('Dados importados. Entre com um login do arquivo importado.');
+    Auth.sair();
+    return telaLogin();
+  }
+  aviso(`${nomes.length} arquivo(s) importado(s).`);
+  await rotear(true);
+}
+
+async function importarBackup(arqs) {
+  arqs = [...arqs];
+  let j = null;
+  if (arqs.length === 1) { try { j = JSON.parse(await arqs[0].text()); } catch { throw new Error('Arquivo inválido.'); } }
+  if (!j || j.app !== 'controle-locacoes' || !j.arquivos) return importarArquivosDeDados(arqs);
   const n = Object.keys(j.arquivos.contratos?.itens || {}).length;
   if (!confirm(`Importar o backup de ${fmtData(j.geradoEm)} (${n} contratos)?\n\nTODOS os dados atuais serão substituídos. Antes, uma cópia dos dados atuais será guardada em _backups.`)) return;
   if (Armaz.modo !== 'local') await copiaDeSeguranca(hoje() + '-antes-da-importacao');
