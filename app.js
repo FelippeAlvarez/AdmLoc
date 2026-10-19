@@ -101,7 +101,7 @@ function normalizarConfig(c) {
   c = c || {};
   return {
     rev: c.rev || 0,
-    administradora: { nome: '', documento: '', endereco: '', telefone: '', email: '', logo: null, logoL: 0, logoA: 0, ...(c.administradora || {}) },
+    administradora: { nome: '', documento: '', endereco: '', cidade: '', telefone: '', email: '', logo: null, logoL: 0, logoA: 0, ...(c.administradora || {}) },
     rubricas: Array.isArray(c.rubricas) && c.rubricas.length ? c.rubricas : RUBRICAS_PADRAO.map(r => ({ ...r })),
     // Padrões dos encargos moratórios (cada contrato pode ter os seus)
     moratorios: { multa: 10, juros: 1, honorarios: 10, indice: 'IGP-M', ignorarNegativos: false, ...(c.moratorios || {}) },
@@ -412,6 +412,20 @@ function opcoes(col) {
 }
 
 /* ================= Formulários ================= */
+const GARANTIAS = [['fianca', 'Fiança (fiador)'], ['seguro', 'Seguro fiança'], ['caucao', 'Caução em dinheiro'], ['titulo', 'Título de capitalização'], ['outra', 'Outra (descrever nas observações)'], ['nenhuma', 'Sem garantia']];
+// Descrição da garantia do contrato, para telas e documentos
+function descGarantia(ct) {
+  const t = ct.tipoGarantia, j = (...p) => p.filter(Boolean).join(', ');
+  let d = '';
+  if (t === 'fianca') d = 'Fiança: ' + [j(ct.fiadorNome, ct.fiadorDocumento && 'CPF/CNPJ ' + ct.fiadorDocumento), j(ct.fiador2Nome, ct.fiador2Documento && 'CPF/CNPJ ' + ct.fiador2Documento)].filter(Boolean).join(' e ');
+  else if (t === 'seguro') d = 'Seguro fiança: ' + j(ct.seguradora, ct.seguradoraCnpj && 'CNPJ ' + ct.seguradoraCnpj, ct.apolice && 'apólice ' + ct.apolice,
+    (ct.apoliceInicio || ct.apoliceFim) && 'vigência ' + [fmtData(ct.apoliceInicio), fmtData(ct.apoliceFim)].filter(Boolean).join(' a '));
+  else if (t === 'caucao') d = 'Caução' + (ct.caucaoValor ? ' de ' + fmtMoeda(ct.caucaoValor) : '') + (ct.caucaoDeposito ? ', depositada em ' + ct.caucaoDeposito : '');
+  else if (t === 'titulo') d = 'Título de capitalização: ' + j(ct.tituloEmissora, ct.tituloCnpj && 'CNPJ ' + ct.tituloCnpj, ct.tituloNumero && 'nº ' + ct.tituloNumero, ct.tituloValor && fmtMoeda(ct.tituloValor));
+  else if (t === 'nenhuma') d = 'Sem garantia';
+  else if (t === 'outra') d = 'Outra';
+  return [d.replace(/: $/, ''), ct.garantia].filter(Boolean).join(' · ');
+}
 const TIPOS_IMOVEL = ['Apartamento', 'Casa', 'Sala comercial', 'Loja', 'Galpão', 'Terreno', 'Vaga de garagem', 'Outro'];
 const CAMPOS_PESSOA = [
   { k: 'nome', l: 'Nome / razão social', req: true, w: 2 },
@@ -457,7 +471,17 @@ const CAMPOS = {
       dica: 'Aplicado uma vez por ano, no mês de reajuste.' },
     { k: 'mesCorrecao', l: 'Mês de aplicação do reajuste', t: 'select', op: () => MESES.map((m, i) => [String(i + 1), m]),
       dica: 'Em branco: o mês de início do contrato.' },
-    { k: 'garantia', l: 'Garantia', w: 2 },
+    { sec: 'Garantia' },
+    { k: 'tipoGarantia', l: 'Tipo de garantia', t: 'select', op: GARANTIAS, w: 2 },
+    { k: 'fiadorNome', l: 'Fiador: nome', w: 2, g: 'fianca' }, { k: 'fiadorDocumento', l: 'Fiador: CPF / CNPJ', g: 'fianca' }, { k: 'fiadorTelefone', l: 'Fiador: telefone', t: 'tel', g: 'fianca' },
+    { k: 'fiadorEndereco', l: 'Fiador: endereço', w: 2, g: 'fianca' },
+    { k: 'fiador2Nome', l: '2º fiador ou cônjuge: nome', w: 2, g: 'fianca' }, { k: 'fiador2Documento', l: '2º fiador ou cônjuge: CPF / CNPJ', g: 'fianca' },
+    { k: 'seguradora', l: 'Seguradora', w: 2, g: 'seguro' }, { k: 'seguradoraCnpj', l: 'CNPJ da seguradora', g: 'seguro' }, { k: 'apolice', l: 'Número da apólice', g: 'seguro' },
+    { k: 'apoliceInicio', l: 'Vigência da apólice: início', t: 'date', g: 'seguro' }, { k: 'apoliceFim', l: 'Vigência da apólice: término', t: 'date', g: 'seguro' },
+    { k: 'caucaoValor', l: 'Valor da caução (R$)', t: 'money', g: 'caucao' }, { k: 'caucaoDeposito', l: 'Depositada em (banco, conta ou poupança)', w: 2, g: 'caucao' },
+    { k: 'tituloEmissora', l: 'Emissora do título', w: 2, g: 'titulo' }, { k: 'tituloCnpj', l: 'CNPJ da emissora', g: 'titulo' }, { k: 'tituloNumero', l: 'Número do título', g: 'titulo' },
+    { k: 'tituloValor', l: 'Valor do título (R$)', t: 'money', g: 'titulo' },
+    { k: 'garantia', l: 'Observações sobre a garantia', w: 2 },
     { sec: 'Taxa de administração' },
     { k: 'taxaAdm', l: 'Percentual (%)', t: 'pct', req: true },
     { k: 'baseTaxa', l: 'Incide sobre', t: 'select', semVazio: true, w: 2,
@@ -502,7 +526,7 @@ function campoHTML(f, reg) {
     default:
       inp = `<input ${a} type="${f.t || 'text'}" value="${esc(v)}"${f.min != null ? ` min="${f.min}"` : ''}${f.max != null && f.t === 'number' ? ` max="${f.max}"` : ''}${f.max && f.t !== 'number' ? ` maxlength="${f.max}"` : ''}>`;
   }
-  return `<div class="${cls}"><label for="f_${f.k}">${esc(f.l)}${f.req ? ' *' : ''}</label>${inp}${f.dica ? `<small>${esc(f.dica)}</small>` : ''}</div>`;
+  return `<div class="${cls}"${f.g ? ` data-gar="${f.g}"` : ''}><label for="f_${f.k}">${esc(f.l)}${f.req ? ' *' : ''}</label>${inp}${f.dica ? `<small>${esc(f.dica)}</small>` : ''}</div>`;
 }
 
 function lerCampos(form, campos, reg) {
@@ -782,6 +806,10 @@ function telaForm(col, id) {
       $('#encargos .enc-linha:last-child .enc-rub').focus();
     });
     $('#encargos').addEventListener('click', e => { if (e.target.dataset.acao === 'del-enc') e.target.closest('.enc-linha').remove(); });
+    // Campos da garantia conforme o tipo escolhido
+    const verGarantia = () => { const t = form.elements.tipoGarantia.value; $$('[data-gar]').forEach(d => { d.hidden = d.dataset.gar !== t; }); };
+    form.elements.tipoGarantia.addEventListener('change', verGarantia);
+    verGarantia();
   }
 
   form.addEventListener('submit', e => {
@@ -854,7 +882,7 @@ async function telaContrato(cid) {
       ${dl('Cliente (locador)', loc?.nome)}${dl('Locatário', nomeDe('locatarios', ct.locatarioId))}
       ${dl('Vigência', [fmtData(ct.inicio), fmtData(ct.fim)].filter(Boolean).join(' a '))}${dl('Vencimento', ct.diaVencimento ? 'Dia ' + ct.diaVencimento + (ct.vencMesSeguinte === 'sim' ? ' do mês seguinte' : '') : '')}
       ${dl('Reajuste', [ct.indiceReajuste, mc ? 'em ' + MESES[mc - 1].toLowerCase() + ' (próximo: ' + nomeMes(proximoReajuste(ct)) + ')' : ''].filter(Boolean).join(' · '))}
-      ${dl('Encargos moratórios', (p => `multa ${fmtPct(p.multa)}% · juros ${fmtPct(p.juros)}% a.m. · honorários ${fmtPct(p.honorarios)}% · correção: ${p.indice}`)(paramsMora(ct)))}${dl('Garantia', ct.garantia)}
+      ${dl('Encargos moratórios', (p => `multa ${fmtPct(p.multa)}% · juros ${fmtPct(p.juros)}% a.m. · honorários ${fmtPct(p.honorarios)}% · correção: ${p.indice}`)(paramsMora(ct)))}${dl('Garantia', descGarantia(ct))}
       ${dl('Repasse', loc ? [loc.banco && 'Banco ' + loc.banco, loc.agencia && 'Ag. ' + loc.agencia, loc.conta && 'Conta ' + loc.conta, loc.pix && 'PIX ' + loc.pix].filter(Boolean).join(' · ') : '')}
       ${dl('Encargos mensais', (ct.encargos || []).map(e => e.rubrica).join(', '))}
     </dl>
@@ -928,7 +956,7 @@ async function telaMes(cid, ym) {
   if (ciclo) await aguardarIndices();
 
   c.innerHTML = cabecalho(nomeMes(ym) + (ed.fechado ? ' <span class="chip fechado">Mês fechado</span>' : ''), sub,
-    nav + `<button class="bt" id="btBoletoMes">Prévia do boleto</button>` + botoesPDF('pdfMes'), voltar) + `
+    nav + `<button class="bt" id="btBoletoMes">Prévia do boleto</button>` + (situacaoPagto(mes) === 'aberto' ? '' : '<button class="bt" id="btReciboMes" title="Recibo do pagamento para o locatário">Recibo</button>') + botoesPDF('pdfMes'), voltar) + `
   <div id="editorMes">
   <section class="cartao aviso-reajuste" id="secReajuste" hidden></section>
   <section class="cartao">
@@ -948,6 +976,13 @@ async function telaMes(cid, ym) {
       <div class="campo" data-vis="pago parcial"><label for="encRecebidos">Multa, juros e correção recebidos</label>
         <div class="campo-bt"><input id="encRecebidos" class="num" inputmode="decimal" data-tipo="money" value="${ed.encargosRecebidos ? fmtNum(ed.encargosRecebidos) : ''}">
         <button class="bt pequeno" id="btCalcEnc" title="Calcula correção, juros e multa entre o vencimento e a data do pagamento">Calcular</button></div></div>
+      <div class="campo" data-vis="pago parcial"><label for="pagadorTipo">Pago por</label><select id="pagadorTipo">
+        <option value="locatario">Locatário: ${esc(nomeDe('locatarios', ct.locatarioId))}</option>
+        ${ct.fiadorNome ? `<option value="fiador">Fiador: ${esc(ct.fiadorNome)}</option>` : ''}
+        ${ct.fiador2Nome ? `<option value="fiador2">Fiador: ${esc(ct.fiador2Nome)}</option>` : ''}
+        <option value="outro">Outra pessoa</option></select></div>
+      <div class="campo" id="pagOutroNome" hidden><label for="pagadorNome">Nome de quem pagou</label><input id="pagadorNome" value="${esc(ed.pagador?.nome || '')}"></div>
+      <div class="campo" id="pagOutroDoc" hidden><label for="pagadorDoc">CPF / CNPJ de quem pagou</label><input id="pagadorDoc" value="${esc(ed.pagador?.documento || '')}"></div>
     </div>
     <p class="dica" id="infoPagto"></p>
   </section>
@@ -1149,6 +1184,8 @@ async function telaMes(cid, ym) {
     $$('#editorMes input, #editorMes select, #editorMes textarea, #editorMes button:not(.livre)').forEach(e => { e.disabled = true; });
     // Pagamento em atraso (lançado no mês do pagamento) pode ser registrado sem reabrir o mês: não altera esta prestação de contas
     if (inicioAtrasoNoPagamento()) $$('input[name=sitPagto], #recebidoEm, #valorRecebido, #encRecebidos, #btCalcEnc, #btSalvar').forEach(e => { e.disabled = false; });
+    // Quem pagou não altera a prestação de contas: pode ser corrigido no mês fechado (sai no recibo)
+    $$('#pagadorTipo, #pagadorNome, #pagadorDoc, #btSalvar').forEach(e => { e.disabled = false; });
   }
 
   renderLinhas();
@@ -1208,12 +1245,22 @@ async function telaMes(cid, ym) {
     marcarSujo(); atualizarResumo();
   });
   $('#valorRecebido').addEventListener('input', e => { ed.valorRecebido = r2(parseValor(e.target.value)); marcarSujo(); atualizarResumo(); });
-  $('#encRecebidos').addEventListener('input', e => { ed.encargosRecebidos = r2(parseValor(e.target.value)); marcarSujo(); atualizarResumo(); });
+  $('#encRecebidos').addEventListener('input', e => { ed.encargosRecebidos = r2(parseValor(e.target.value)); ed.encargosDetalhe = null; marcarSujo(); atualizarResumo(); });
+  // Quem pagou (aparece no recibo): locatário, fiador ou outra pessoa
+  const verPagador = () => { const outro = $('#pagadorTipo').value === 'outro' && ed.pagamento !== 'aberto'; $('#pagOutroNome').hidden = $('#pagOutroDoc').hidden = !outro; };
+  $('#pagadorTipo').value = [...$('#pagadorTipo').options].some(o => o.value === ed.pagador?.tipo) ? ed.pagador.tipo : 'locatario';
+  const lerPagador = () => { const tipo = $('#pagadorTipo').value; ed.pagador = tipo === 'outro' ? { tipo, nome: $('#pagadorNome').value.trim(), documento: $('#pagadorDoc').value.trim() } : { tipo }; };
+  $('#pagadorTipo').addEventListener('change', () => { lerPagador(); verPagador(); marcarSujo(); });
+  $$('#pagadorNome, #pagadorDoc').forEach(i => i.addEventListener('input', () => { lerPagador(); marcarSujo(); }));
+  $('#sitPagto').addEventListener('change', verPagador);
+  verPagador();
   $('#btCalcEnc').addEventListener('click', () => {
     if (!ed.recebidoEm || !ed.vencimento) return aviso('Informe o vencimento e a data do pagamento.', 'erro');
     const k = calcMes(ed, saldoAnterior, ctxMes);
     const e = encargosMoratorios(k.diferido ? k.diferido.principal : k.principalRecebido, ed.vencimento, ed.recebidoEm, paramsMora(ct));
     ed.encargosRecebidos = r2(e.total - (k.diferido ? k.diferido.principal : k.principalRecebido));
+    // Partes dos encargos, para o recibo discriminar multa, juros e correção
+    ed.encargosDetalhe = ed.encargosRecebidos ? { correcao: e.correcao, juros: e.juros, multa: e.multa } : null;
     $('#encRecebidos').value = ed.encargosRecebidos ? fmtNum(ed.encargosRecebidos) : '';
     marcarSujo(); atualizarResumo();
     aviso(e.dias ? `Pagamento com ${e.dias} dia(s) de atraso: correção ${fmtMoeda(e.correcao)}, juros ${fmtMoeda(e.juros)}, multa ${fmtMoeda(e.multa)}.` : 'Pagamento em dia: sem encargos.');
@@ -1284,7 +1331,8 @@ async function telaMes(cid, ym) {
     if (ed.repasses.some(r => !r.data)) throw new Error('Informe a data de todos os repasses.');
     if (ed.pagamento !== 'aberto' && !ed.recebidoEm) throw new Error('Informe a data do pagamento do locatário.');
     if (ed.pagamento === 'parcial' && !ed.valorRecebido) throw new Error('Informe o valor recebido do locatário.');
-    if (ed.pagamento === 'aberto') { ed.recebidoEm = ''; ed.valorRecebido = 0; ed.encargosRecebidos = 0; }
+    if (ed.pagamento === 'aberto') { ed.recebidoEm = ''; ed.valorRecebido = 0; ed.encargosRecebidos = 0; ed.encargosDetalhe = null; ed.pagador = null; }
+    if (ed.pagamento !== 'aberto' && ed.pagador?.tipo === 'outro' && !ed.pagador.nome) throw new Error('Informe o nome de quem pagou.');
     if (ed.pagamento === 'pago') ed.valorRecebido = 0;
     ed.ajustes = ed.ajustes.filter(a => a.valor);
     if (ed.ajustes.some(a => a.valor < 0)) throw new Error('Informe os descontos e reembolsos como valores positivos.');
@@ -1316,6 +1364,10 @@ async function telaMes(cid, ym) {
     sujo = false;
     aviso('Mês excluído.');
     location.hash = `#/contrato/${cid}`;
+  }));
+  $('#btReciboMes')?.addEventListener('click', () => executar(async () => {
+    if (sujo) throw new Error('Salve as alterações antes de emitir o recibo.');
+    await visualizarPDF(gerarRecibos([{ ct: D.contratos[cid], ym, mes: ed }]));
   }));
   $('#btBoletoMes').addEventListener('click', () => {
     if (sujo) return aviso('Salve as alterações antes de ver a prévia do boleto.', 'erro');
@@ -1401,7 +1453,7 @@ function telaConfig() {
     <div class="grade-form">
       ${campoA('nome', 'Nome / razão social', 2)}${campoA('documento', 'CNPJ / CPF')}${campoA('creci', 'CRECI')}
       ${campoA('endereco', 'Endereço completo', 2)}${campoA('telefone', 'Telefone')}${campoA('email', 'E-mail')}
-      ${campoA('site', 'Site', 2)}
+      ${campoA('site', 'Site', 2)}${campoA('cidade', 'Cidade (local dos recibos)')}
       <div class="campo w2"><label>Logotipo</label><div class="logo-ctl">
         <img id="logoPrev" alt="" ${a.logo ? `src="${a.logo}"` : 'hidden'}>
         <input type="file" id="logoArq" accept="image/png,image/jpeg">

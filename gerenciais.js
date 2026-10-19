@@ -15,6 +15,7 @@ const RELATORIOS = [
   ['repasses', 'Repasses do período e saldos a repassar'],
   ['vencimentos', 'Contratos a vencer e reajustes próximos'],
   ['vacancia', 'Vacância (imóveis sem contrato ativo)'],
+  ['recibos', 'Recibos de aluguel (vários de uma vez)'],
 ];
 
 function seletorRelatorioHTML(rel) {
@@ -537,7 +538,33 @@ const RelVacancia = {
   },
 };
 
-const GERENCIAIS = { clientes: RelClientes, imoveis: RelImoveis, taxa: RelTaxa, informe: RelInforme, dimob: RelDimob, repasses: RelRepasses, vencimentos: RelVencimentos, vacancia: RelVacancia };
+/* ================= Recibos de aluguel em lote ================= */
+const RelRecibos = {
+  descr: 'Recibos dos pagamentos dos locatários no período, um por folha, para impressão ou envio',
+  semExcel: true,
+  form: () => campoPeriodo()
+    + campoRadios('gBase', 'Selecionar pelo', [['caixa', 'Mês do pagamento'], ['ref', 'Mês de referência']], 'caixa')
+    + campoSelect('gCliente', 'Cliente', opcoesClientes()) + campoSelect('gContrato', 'Contrato', opcoes('contratos')),
+  ler: () => ({ ...lerPeriodo(), base: radio('gBase'), cliente: $('#gCliente').value, contrato: $('#gContrato').value }),
+  async pdf(o) {
+    let cts = Object.values(D.contratos);
+    if (o.cliente) cts = cts.filter(c => c.locadorId === o.cliente);
+    if (o.contrato) cts = cts.filter(c => c.id === o.contrato);
+    const itens = [];
+    for (const { ct, ext } of await extratosDe(cts)) {
+      for (const [ym, mes] of Object.entries(ext.meses)) {
+        if (situacaoPagto(mes) === 'aberto' || !mes.recebidoEm) continue;
+        const m = o.base === 'caixa' ? mes.recebidoEm.slice(0, 7) : ym;
+        if (m >= o.de && m <= o.ate) itens.push({ ct, ym, mes });
+      }
+    }
+    itens.sort((a, b) => comparar(nomeDe('locadores', a.ct.locadorId), nomeDe('locadores', b.ct.locadorId)) || ordemContrato(a.ct, b.ct) || comparar(a.ym, b.ym));
+    if (!itens.length) throw new Error('Nenhum pagamento de locatário (com data informada) no período.');
+    return gerarRecibos(itens, nomeArquivo('recibos', o.de === o.ate ? o.de : o.de + '_a_' + o.ate) + '.pdf');
+  },
+};
+
+const GERENCIAIS = { recibos: RelRecibos, clientes: RelClientes, imoveis: RelImoveis, taxa: RelTaxa, informe: RelInforme, dimob: RelDimob, repasses: RelRepasses, vencimentos: RelVencimentos, vacancia: RelVacancia };
 
 function telaRelatorioGerencial(rel) {
   const R = GERENCIAIS[rel];
@@ -545,12 +572,12 @@ function telaRelatorioGerencial(rel) {
   <section class="cartao form">
     <div class="grade-form">${R.form()}</div>
     <div class="barra-form"><span class="dica">${D.config.administradora?.nome ? '' : 'Os dados e o logotipo da administradora, que formam o cabeçalho dos relatórios, ainda não foram preenchidos (Administração).'}</span><span class="espaco"></span>
-      ${botoesPDF('gerPdf')}<button class="bt" id="gerXlsx">Exportar Excel</button></div>
+      ${botoesPDF('gerPdf')}${R.semExcel ? '' : '<button class="bt" id="gerXlsx">Exportar Excel</button>'}</div>
   </section>`;
   ligarSeletorRelatorio();
   if ($('#gDe')) ligarPeriodo();
   R.ligar?.();
   const modelo = async () => R.gerar(R.ler());
-  ligarBotoesPDF('gerPdf', async () => pdfDeModelo(await modelo()));
-  $('#gerXlsx').addEventListener('click', () => executar(async () => { const m = await modelo(); await salvarPlanilha(xlsxDeModelo(m), m.arquivo + '.xlsx'); }));
+  ligarBotoesPDF('gerPdf', async () => R.pdf ? R.pdf(R.ler()) : pdfDeModelo(await modelo()));
+  $('#gerXlsx')?.addEventListener('click', () => executar(async () => { const m = await modelo(); await salvarPlanilha(xlsxDeModelo(m), m.arquivo + '.xlsx'); }));
 }

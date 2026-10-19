@@ -354,8 +354,9 @@ details p { margin: 8px 0 0; }
       <li><b>Clientes (locadores)</b>: inclua os dados bancários para o repasse.</li>
       <li><b>Imóveis</b>: cada um ligado ao seu cliente.</li>
       <li><b>Locatários</b>.</li>
-      <li><b>Contratos</b>: imóvel, locatário, aluguel, vencimento, reajuste, taxa de administração e encargos mensais.</li>
+      <li><b>Contratos</b>: imóvel, locatário, aluguel, vencimento, reajuste, garantia, taxa de administração e encargos mensais.</li>
     </ol>
+    <p class="dica"><b>Garantia</b>: escolha o tipo e preencha os dados que aparecem: fiança (fiador e 2º fiador ou cônjuge, com CPF/CNPJ), seguro fiança (seguradora, CNPJ, apólice e vigência), caução (valor e onde está depositada) ou título de capitalização (emissora, CNPJ, número e valor). Os dados do fiador aparecem na opção <b>Pago por</b> do mês e no recibo.</p>
     <figure><img src="img/cadastro-contrato.jpg" alt="Formulário de contrato com imóvel, cliente, locatário, prazo e valores" loading="lazy">
       <figcaption>Ao escolher o imóvel, o cliente é preenchido sozinho. Informe se o aluguel vence no próprio mês ou no mês seguinte.</figcaption></figure>
     <figure><img src="img/cadastro-contrato-2.jpg" alt="Continuação do formulário: taxa de administração, encargos mensais e encargos moratórios" loading="lazy">
@@ -375,6 +376,17 @@ details p { margin: 8px 0 0; }
       <li>Pagou atrasado? Clique em <span class="botao">Calcular</span>: o app preenche multa, juros e correção até a data do pagamento.</li>
     </ul>
     <div class="nota dica"><p><b>Pagamento em atraso, feito num mês posterior</b> (ex.: aluguel de agosto pago em 15 de outubro): registre o pagamento no mês de referência (agosto), como sempre. O valor e a taxa de administração entram na prestação de contas <b>do mês do pagamento</b> (outubro), no item "Recebimentos de meses anteriores"; a prestação de agosto não muda e informa onde o pagamento foi lançado. Se agosto já estiver fechado, não é preciso reabri-lo. Vale para pagamentos a partir da data definida em <b>Administração › Pagamentos em atraso na prestação de contas</b>.</p></div>
+
+    <h3>Recibo para o locatário</h3>
+    <ul>
+      <li>Com o mês marcado como <b>Pago</b> ou <b>Pago em parte</b> e salvo, o botão <span class="botao">Recibo</span> (no alto da tela do mês) gera o recibo em PDF, numa folha, com o timbre da administradora.</li>
+      <li>O recibo discrimina as rubricas cobradas do locatário (aluguel, condomínio, IPTU etc.), descontos e reembolsos, e a multa, os juros e a correção. Eles saem separados quando foram calculados pelo botão <span class="botao">Calcular</span>. A taxa de administração não aparece: ela é paga pelo locador à administradora.</li>
+      <li>Informa quem recebe (o locador, representado pela administradora como procuradora), quem pagou, o imóvel, o mês de referência e a data do pagamento, e traz a ressalva de que a quitação vale só para os valores discriminados.</li>
+      <li><b>Pago por</b>: escolha o locatário (padrão), o fiador cadastrado no contrato ou outra pessoa (nome e CPF/CNPJ). Pode ser corrigido mesmo com o mês fechado.</li>
+      <li>Pagamento parcial: o recibo mostra o total devido, o valor pago e o saldo que permanece em aberto.</li>
+      <li>O número do recibo é o contrato e o mês (ex.: 004-07/2026). A assinatura é feita à mão ou eletronicamente, sobre a linha com o nome da administradora. A cidade do recibo vem de <b>Administração › Cidade (local dos recibos)</b>; em branco, usa a cidade do imóvel.</li>
+      <li>Para vários de uma vez: <b>Relatórios › Recibos de aluguel</b>, por mês do pagamento ou de referência, com filtro de cliente ou contrato.</li>
+    </ul>
 
     <h3>2. Rubricas, descontos e reembolsos</h3>
     <figure><img src="img/mes-rubricas.jpg" alt="Rubricas do mês com valores cobrados e pagos, e a seção de descontos e reembolsos" loading="lazy">
