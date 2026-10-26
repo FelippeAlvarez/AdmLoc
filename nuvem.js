@@ -43,6 +43,8 @@ const NuvemDropbox = {
     location.href = 'https://www.dropbox.com/oauth2/authorize?' + new URLSearchParams({
       client_id: chave, response_type: 'code', code_challenge: desafio, code_challenge_method: 'S256',
       token_access_type: 'offline', redirect_uri: urlRetorno(), state: 'dropbox',
+      // Pede o login no Dropbox mesmo que o navegador já esteja conectado a outra conta (ex.: a pessoal)
+      force_reauthentication: 'true',
     });
   },
 
@@ -57,6 +59,7 @@ const NuvemDropbox = {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error('Dropbox: ' + (j.error_description || j.error || 'erro ' + r.status));
     localStorage.setItem('cl-dbx-refresh', j.refresh_token);
+    localStorage.removeItem('cl-dbx-conta');
     this._token = j.access_token;
     this._expira = Date.now() + (j.expires_in - 120) * 1000;
   },
@@ -141,7 +144,19 @@ const NuvemDropbox = {
     try { this._revs.set(c, (await r.json()).rev); } catch { this._revs.delete(c); }
   },
 
-  sair() { localStorage.removeItem('cl-dbx-refresh'); this._token = null; },
+  // Conta do Dropbox ligada a este aparelho (nome e e-mail), para conferir se é a da administradora
+  async conta() {
+    const salva = localStorage.getItem('cl-dbx-conta');
+    if (salva) return JSON.parse(salva);
+    const r = await buscarNuvem('https://api.dropboxapi.com/2/users/get_current_account', { method: 'POST', headers: { Authorization: 'Bearer ' + await this.token() } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const c = { nome: j.name?.display_name || '', email: j.email || '', equipe: j.team?.name || '' };
+    localStorage.setItem('cl-dbx-conta', JSON.stringify(c));
+    return c;
+  },
+
+  sair() { localStorage.removeItem('cl-dbx-refresh'); localStorage.removeItem('cl-dbx-conta'); this._token = null; },
 };
 
 /*
@@ -188,6 +203,7 @@ const Convite = {
       d = JSON.parse(new TextDecoder().decode(claro));
     } catch { throw new Error('Código de ativação incorreto para este convite.'); }
     localStorage.setItem('cl-dbx-refresh', d.r);
+    localStorage.removeItem('cl-dbx-conta');
     NuvemDropbox._token = null;
   },
 };

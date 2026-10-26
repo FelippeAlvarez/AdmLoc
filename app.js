@@ -1499,7 +1499,7 @@ function telaConfig() {
       <label class="bt">Importar backup ou arquivos de dados<input type="file" id="arqImportar" accept=".json,application/json" multiple hidden></label>
       ${Armaz.modo === 'servidor' ? '' : dropboxFixo() ? '<button class="bt primario" id="btConvite">Gerar convite para outro aparelho</button><button class="bt perigo" id="btDesconectarDbx">Desconectar este aparelho do Dropbox</button>' : '<button class="bt" id="btTrocar">Trocar local de armazenamento</button>'}
     </div>
-    ${dropboxFixo() ? `<p class="dica">Este aparelho está conectado à pasta <b>${esc(pastaDropboxFixa())}</b> do Dropbox da administradora. Todos os aparelhos usam essa mesma pasta. Para incluir o aparelho de alguém da equipe: crie o usuário (acima) e use <b>Gerar convite para outro aparelho</b>; a pessoa abre o link, digita o código e entra com o login dela. Aparelho perdido ou de alguém que saiu da equipe: no site do Dropbox (conta da administradora) → Configurações → Aplicativos conectados, remova o aplicativo; todos os aparelhos precisarão ser conectados de novo.</p>` : ''}
+    ${dropboxFixo() ? `<p id="contaDbx"></p><p class="dica">Este aparelho está conectado à pasta <b>${esc(pastaDropboxFixa())}</b> do Dropbox da administradora. Todos os aparelhos usam essa mesma pasta. Para incluir o aparelho de alguém da equipe: crie o usuário (acima) e use <b>Gerar convite para outro aparelho</b>; a pessoa abre o link, digita o código e entra com o login dela. Aparelho perdido ou de alguém que saiu da equipe: no site do Dropbox (conta da administradora) → Configurações → Aplicativos conectados, remova o aplicativo; todos os aparelhos precisarão ser conectados de novo.</p>` : ''}
     ${Armaz.modo !== 'servidor' ? '<p class="dica">Neste modo, os usuários e as permissões são controlados pelo aplicativo. Quem tiver acesso direto à pasta (fora do aplicativo) consegue alterar os arquivos; compartilhe a pasta somente com quem deve ter acesso.</p>' : ''}
   </section>
   ${secaoIndicesHTML()}`;
@@ -1561,6 +1561,7 @@ function telaConfig() {
   ligarIndices();
   $('#btExportar').addEventListener('click', () => executar(exportarBackup));
   $('#arqImportar').addEventListener('change', e => executar(async () => { if (e.target.files.length) await importarBackup(e.target.files); e.target.value = ''; }));
+  if ($('#contaDbx')) NuvemDropbox.conta().then(c => { if (c && $('#contaDbx')) $('#contaDbx').innerHTML = `Conta do Dropbox conectada: <b>${esc(c.nome)}</b>${c.email ? ' (' + esc(c.email) + ')' : ''}${c.equipe ? ' · equipe ' + esc(c.equipe) : ''}`; }).catch(() => {});
   $('#btConvite')?.addEventListener('click', () => executar(gerarConvite));
   $('#btDesconectarDbx')?.addEventListener('click', () => {
     if (!confirm('Desconectar este aparelho do Dropbox? Para voltar a usar o app nele, o administrador terá de conectá-lo de novo com a conta do Dropbox da administradora.')) return;

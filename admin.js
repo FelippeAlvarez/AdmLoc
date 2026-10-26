@@ -13,7 +13,13 @@ async function telaLogin(mensagem) {
     c.innerHTML = `<section class="cartao erro caixa-login"><h2>Sem conexão com os dados</h2><p>${esc(e.message)}</p><button class="bt primario" onclick="location.reload()">Tentar novamente</button></section>`;
     return;
   }
-  const outroLocal = Armaz.modo !== 'servidor' && !dropboxFixo() ? '<p class="dica"><a href="#" id="lnkOutroLocal">Usar outro local de dados neste aparelho</a></p>' : '';
+  let outroLocal = Armaz.modo !== 'servidor' && !dropboxFixo() ? '<p class="dica"><a href="#" id="lnkOutroLocal">Usar outro local de dados neste aparelho</a></p>' : '';
+  // Dropbox fixo: mostra a conta conectada e permite desconectar (ex.: aparelho ligado à conta pessoal por engano)
+  if (dropboxFixo() && Armaz.modo === 'dropbox') {
+    const conta = await NuvemDropbox.conta().catch(() => null);
+    const qual = conta ? `<b>${esc(conta.nome)}</b>${conta.email ? ' (' + esc(conta.email) + ')' : ''}${conta.equipe ? ' · equipe ' + esc(conta.equipe) : ''}` : 'conta não identificada';
+    outroLocal = `<p class="dica conta-dbx">Dados no Dropbox de ${qual}. Não é a conta da administradora? <a href="#" id="lnkDesconectarDbx">Desconectar este aparelho do Dropbox</a></p>`;
+  }
 
   if (!tem && !Auth.podeCriarPrimeiroAdmin()) {
     c.innerHTML = `<section class="cartao caixa-login"><h1>Controle de Locações</h1>
@@ -25,6 +31,7 @@ async function telaLogin(mensagem) {
 
   if (!tem) {
     c.innerHTML = `<section class="cartao caixa-login form"><h1>Primeiro acesso</h1>
+      ${dropboxFixo() ? '<p class="alerta">Não há dados nem usuários nesta conta do Dropbox. Se a administradora já usa o aplicativo, este aparelho foi conectado à conta errada: use <b>Desconectar este aparelho do Dropbox</b>, no fim desta tela, e não crie o administrador aqui.</p>' : ''}
       <p>Crie o <b>administrador</b>: ele cadastra os demais usuários e é o único com acesso à área de administração (dados da administradora, usuários, armazenamento e servidor).</p>
       <form id="formLogin" class="grade-login">
         <div class="campo"><label for="lgNome">Seu nome</label><input id="lgNome" required autocomplete="name"></div>
@@ -68,6 +75,12 @@ async function telaLogin(mensagem) {
     });
   }
   $('#lnkOutroLocal')?.addEventListener('click', e => { e.preventDefault(); Armaz.desconectar(); Armaz.modo = null; Auth.sair(); telaConexao(); });
+  $('#lnkDesconectarDbx')?.addEventListener('click', e => {
+    e.preventDefault();
+    if (!confirm('Desconectar este aparelho do Dropbox? Nada é apagado no Dropbox. Depois, ative o aparelho com o convite enviado pelo administrador ou conecte com a conta do Dropbox da administradora.')) return;
+    NuvemDropbox.sair(); Armaz.desconectar(); Auth.sair();
+    location.hash = ''; location.reload();
+  });
 }
 
 /* ================= Minha conta ================= */
