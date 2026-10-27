@@ -102,12 +102,12 @@ async function telaDebito(cid, calcId) {
       </tbody></table></div>` : `<p class="vazio">Nenhum mês vencido e não pago até ${fmtData(calc.dataCalc)}.</p>`}
       <h3 class="sec">Outros débitos</h3>
       <p class="dica">Ex.: reparos, aluguéis anteriores ao controle no aplicativo, diferenças. Correção e juros desde o vencimento; multa contratual se marcada.</p>
-      ${listaHTML('extras', calc.extras, CAMPOS_EXTRA, '+ Outro débito')}
+      ${listaHTML('extras', calc.extras, CAMPOS_EXTRA, '+ Outro débito')}<button type="button" class="bt pequeno" data-imp="extras">Importar planilha (Excel ou CSV)</button>
     </section>
     <section class="cartao">
       <h2>Custas e despesas</h2>
       <p class="dica">${judicial ? 'Custas judiciais, diligências, taxa judiciária, perícia etc.' : 'Despesas da cobrança, como notificações.'} Corrigidas desde a data do pagamento, sem juros.</p>
-      ${listaHTML('custas', calc.custas, CAMPOS_CUSTA, '+ Custa ou despesa')}
+      ${listaHTML('custas', calc.custas, CAMPOS_CUSTA, '+ Custa ou despesa')}<button type="button" class="bt pequeno" data-imp="custas">Importar planilha (Excel ou CSV)</button>
     </section>
     <section class="cartao form">
       <h2>Honorários advocatícios</h2>
@@ -180,7 +180,8 @@ async function telaDebito(cid, calcId) {
       if (e.target.name === 'dTipo' || e.target.dataset.k === 'juros' || e.target.dataset.a === 'aplicar' || e.target.id === 'dData' || e.target.id === 'dFinal') render();
     };
     raiz.onclick = e => {
-      const add = e.target.dataset.add, del = e.target.dataset.del;
+      const add = e.target.dataset.add, del = e.target.dataset.del, imp = e.target.dataset.imp;
+      if (imp) return abrirImportacao({ destino: imp, dia: Number(ct.diaVencimento) || 10, aoConcluir: lista => { calc[imp].push(...lista); marcar(); render(); } });
       if (add) { (add === 'amort' ? amort : calc[add]).push(NOVOS_ITENS[add]()); marcar(); render(); }
       else if (del) { (del === 'amort' ? amort : calc[del]).splice(+e.target.dataset.i, 1); marcar(); render(); }
     };
