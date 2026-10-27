@@ -431,14 +431,20 @@ details p { margin: 8px 0 0; }
 
     <h2 id="cobranca">Cobrança e inadimplência</h2>
     <h3>Cálculo do débito de um contrato</h3>
-    <p>Na tela do contrato, clique em <span class="botao">Cálculo do débito</span>. O app lista os meses vencidos e não pagos e atualiza cada um para a data escolhida.</p>
-    <figure><img src="img/debito.jpg" alt="Cálculo do débito com critérios e a tabela de meses em atraso" loading="lazy">
-      <figcaption>Mude a data, os percentuais ou o índice só para este cálculo. Desmarque um mês para tirá-lo, ou use <span class="botao">+ Outro débito</span> para incluir, por exemplo, um conserto.</figcaption></figure>
-    <figure><img src="img/debito-total.jpg" alt="Total do débito com correção, juros, multa e honorários" loading="lazy">
-      <figcaption>Total com correção monetária, juros de mora pro rata die, multa e honorários advocatícios.</figcaption></figure>
+    <p>Na tela do contrato, clique em <span class="botao">Cálculo do débito</span>. Os cálculos ficam <b>salvos no contrato</b>: para atualizar uma cobrança, basta abri-la, mudar a data e salvar ou gerar o PDF.</p>
+    <ol class="passos">
+      <li><b>Cálculo</b>: escolha um cálculo salvo ou <b>+ Novo cálculo</b>; dê um nome, a data e o tipo (<b>extrajudicial</b> ou <b>judicial</b>, com número do processo, juízo, ajuizamento e citação).</li>
+      <li><b>Critérios</b>: começam iguais aos do contrato. É possível trocar o índice (IGP-M, IPCA, INPC, IGP-DI, IPCA-E, UFIR-RJ), os juros (% ao mês, taxa legal do art. 406 do CC, SELIC ou sem juros), a capitalização, a multa e aplicar a transição da Lei 14.905/2024.</li>
+      <li><b>Débitos</b>: os meses vencidos e não pagos entram sozinhos; desmarque os que não quiser. Em <b>+ Outro débito</b>, inclua reparos, diferenças ou aluguéis anteriores ao controle no aplicativo.</li>
+      <li><b>Custas e despesas</b>: corrigidas desde a data do pagamento.</li>
+      <li><b>Honorários</b>: no extrajudicial, contratuais (% sobre o total); no judicial, sucumbenciais (% sobre a condenação, % sobre o valor da causa ou valor fixo).</li>
+      <li><b>Judicial</b>: multas processuais (litigância de má-fé, embargos protelatórios, astreintes etc.) e a multa e os honorários do <b>art. 523, § 1º, do CPC</b>.</li>
+      <li><b>Pagamentos e amortizações</b>: pagamentos do débito, depósitos judiciais, levantamentos. O débito é atualizado até a data de cada pagamento; o valor abate primeiro juros e multa (art. 354 do CC) ou o principal, nos débitos mais antigos (art. 355), proporcionalmente, nas custas primeiro ou num mês escolhido. Os pagamentos valem para todos os cálculos do contrato e para a Inadimplência; os pagamentos em parte lançados nos meses entram sozinhos.</li>
+      <li><b>Prestação de contas do locador</b>: marque <b>Lançar</b> e informe a data em que o valor ficou disponível (ex.: depósito judicial: data do levantamento). O valor entra na prestação de contas desse mês, como "Recebido de débito em atraso", com a taxa de administração do contrato (pode ser desmarcada). O valor a lançar pode ser ajustado, por exemplo, para excluir a parte dos honorários.</li>
+    </ol>
     <ul>
-      <li><span class="botao">Visualizar PDF</span> / <span class="botao">Salvar PDF</span>: demonstrativo para enviar ao locatário ou ao advogado.</li>
-      <li><span class="botao">Salvar planilha Excel</span>: planilha com fórmulas. Alterando multa, juros, honorários ou data no Excel, os valores são recalculados.</li>
+      <li><span class="botao">Visualizar PDF</span> / <span class="botao">Salvar PDF</span>: demonstrativo com credor, devedores (locatário e fiadores), critérios, cada item com fator de correção, juros e multa, os pagamentos abatidos e o total. No judicial, sai como demonstrativo discriminado e atualizado do crédito (art. 524 do CPC).</li>
+      <li><span class="botao">Salvar planilha Excel</span>: sem pagamentos e com juros ao mês simples, a planilha sai com fórmulas e a folha "Índices": mudando a data, os percentuais ou incluindo meses no Excel, tudo é recalculado. Nos demais casos, sai com os valores calculados pelo aplicativo.</li>
     </ul>
     <h3>Relatório de inadimplência</h3>
     <figure><img src="img/inadimplencia.jpg" alt="Relatório de inadimplência agrupado por locatário com totais" loading="lazy">

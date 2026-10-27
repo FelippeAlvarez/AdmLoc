@@ -263,7 +263,7 @@ function blocoMesPDF(P, x) {
     P.y += 2;
   }
   const reps = (m.repasses || []).map(r => [`(-) Repasse ao cliente em ${fmtData(r.data)}${r.obs ? ' - ' + r.obs : ''}`, r.valor]);
-  const anteriores = (k.anteriores || []).map(v => [`(+) Recebido em ${fmtData(v.recebidoEm)}, referente a ${mesNum(v.ym)} (pagamento em atraso${v.encargos ? `; inclui multa, juros e correção de R$ ${fmtNum(v.encargos)}` : ''})`, v.recebido]);
+  const anteriores = (k.anteriores || []).map(v => v.cobranca ? [`(+) ${v.desc}`, v.recebido] : [`(+) Recebido em ${fmtData(v.recebidoEm)}, referente a ${mesNum(v.ym)} (pagamento em atraso${v.encargos ? `; inclui multa, juros e correção de R$ ${fmtNum(v.encargos)}` : ''})`, v.recebido]);
   resumoPDF(P, [
     ['Saldo anterior (não repassado)', k.saldoAnterior],
     ['Total devido pelo locatário no mês', k.devido],
@@ -273,7 +273,7 @@ function blocoMesPDF(P, x) {
     ['(-) Total pago pela administradora', k.pago],
     ['(=) Saldo líquido do mês', k.liquido, 'b'],
     [`(-) Taxa de administração: ${fmtPct(m.taxaAdm)}% sobre ${m.baseTaxa === 'total' ? 'o total recebido' : 'a locação recebida'} (base ${fmtNum(k.baseTaxa)})`, k.taxaMes],
-    ...(anteriores.length ? [['(-) Taxa de administração sobre os recebimentos de meses anteriores', k.taxaAnteriores]] : []),
+    ...(anteriores.length ? [['(-) Taxa de administração sobre os recebimentos de meses anteriores e de débitos em atraso', k.taxaAnteriores]] : []),
     ['(=) Saldo do mês', k.saldoMes, 'b'],
     ['Disponível para repasse', k.disponivel],
     ...(reps.length ? reps : [['(-) Repassado ao cliente', 0]]),

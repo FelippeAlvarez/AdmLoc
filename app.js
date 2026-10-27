@@ -88,7 +88,7 @@ const usuario = () => Auth.usuario?.nome || '';
 
 /* ================= Dados ================= */
 const COLECOES = ['locadores', 'locatarios', 'imoveis', 'contratos'];
-const D = { config: null, locadores: {}, locatarios: {}, imoveis: {}, contratos: {}, extratos: {}, carregadoEm: 0 };
+const D = { config: null, locadores: {}, locatarios: {}, imoveis: {}, contratos: {}, extratos: {}, calcs: {}, carregadoEm: 0 };
 
 const RUBRICAS_PADRAO = [
   ['Aluguel', true], ['Condomínio', false], ['IPTU', false], ['Seguro incêndio', false], ['Taxa de lixo', false],
@@ -131,7 +131,7 @@ function atualizarDatalist() {
 }
 const rubricaCatalogo = nome => D.config.rubricas.find(r => r.nome.trim().toLowerCase() === String(nome || '').trim().toLowerCase());
 
-const arquivosDeDados = () => ['config.json', 'indices.json', ...COLECOES.map(c => c + '.json'), ...Object.keys(D.contratos).map(id => `extratos/${id}.json`)];
+const arquivosDeDados = () => ['config.json', 'indices.json', ...COLECOES.map(c => c + '.json'), ...Object.keys(D.contratos).flatMap(id => [`extratos/${id}.json`, `calculos/${id}.json`])];
 
 // Cópia diária de segurança de todos os arquivos, feita antes da primeira gravação do dia
 let backupDoDia = null;
@@ -204,7 +204,8 @@ async function salvarConfig(novo) {
 }
 
 async function carregarExtrato(cid) {
-  const e = await lerJSON(`extratos/${cid}.json`, { contratoId: cid, meses: {} });
+  // Os cálculos de débito do contrato vêm junto: pagamentos lançados neles podem entrar na prestação de contas
+  const [e] = await Promise.all([lerJSON(`extratos/${cid}.json`, { contratoId: cid, meses: {} }), carregarCalculos(cid)]);
   e.meses = e.meses || {};
   D.extratos[cid] = e;
   return e;
@@ -328,6 +329,27 @@ function recebimentosDiferidos(ext, exceto) {
   return mapa;
 }
 
+/*
+  Recebimentos lançados em cada mês da prestação de contas: os pagamentos em atraso (acima) e os pagamentos de débitos
+  registrados no Cálculo do débito com a opção "lançar na prestação de contas", na data em que o valor fica disponível
+  (ex.: depósito judicial, só depois do levantamento). A taxa de administração do contrato incide se assim indicado.
+*/
+function recebimentosLancados(ct, ext, exceto) {
+  const mapa = recebimentosDiferidos(ext, exceto);
+  for (const a of D.calcs?.[ct.id]?.amortizacoes || []) {
+    const p = a.prestacao;
+    if (!p?.lancar || !ehData(p.data)) continue;
+    const v = cent(p.valor === undefined || p.valor === null || p.valor === '' ? a.valor : p.valor);
+    if (!v) continue;
+    const taxa = p.taxa === false ? 0 : Math.round(v * (Number(ct.taxaAdm) || 0) / 100);
+    const lanc = p.data.slice(0, 7);
+    (mapa[lanc] = mapa[lanc] || []).push({ ym: lanc, cobranca: true, recebidoEm: a.data, disponivelEm: p.data,
+      desc: `Recebido de débito em atraso${a.obs ? ' (' + a.obs + ')' : ''}: pago em ${fmtData(a.data)}${p.data !== a.data ? ', disponível em ' + fmtData(p.data) : ''}`,
+      r: { principal: v, encargos: 0, recebido: v, locacao: v, base: taxa ? v : 0, taxa } });
+  }
+  return mapa;
+}
+
 function chipPagto(c, venc) {
   if (c.situacao === 'pago') return '<span class="chip fechado">Pago</span>';
   const atraso = venc < hoje();
@@ -339,7 +361,7 @@ function chipPagto(c, venc) {
 // Encadeia os meses: o saldo em conta de um mês é o saldo anterior do mês seguinte
 function calcularExtrato(ct, ext) {
   let saldo = r2(ct.saldoInicial);
-  const vindos = recebimentosDiferidos(ext);
+  const vindos = recebimentosLancados(ct, ext);
   return Object.keys(ext.meses).sort().map(ym => {
     const mes = ext.meses[ym];
     const c = calcMes(mes, saldo, { ym, vindos: vindos[ym] });
@@ -467,7 +489,7 @@ const CAMPOS = {
     { k: 'diaVencimento', l: 'Dia do vencimento', t: 'number', min: 1, max: 31 },
     { k: 'vencMesSeguinte', l: 'O aluguel do mês vence', t: 'select', semVazio: true, w: 2,
       op: [['nao', 'No próprio mês de referência'], ['sim', 'No mês seguinte ao de referência']] },
-    { k: 'indiceReajuste', l: 'Índice de reajuste do aluguel', t: 'select', op: () => [...Object.keys(SERIES_BCB), 'Nenhum'].map(i => [i, i]),
+    { k: 'indiceReajuste', l: 'Índice de reajuste do aluguel', t: 'select', op: () => [...INDICES_REAJUSTE, 'Nenhum'].map(i => [i, i]),
       dica: 'Aplicado uma vez por ano, no mês de reajuste.' },
     { k: 'mesCorrecao', l: 'Mês de aplicação do reajuste', t: 'select', op: () => MESES.map((m, i) => [String(i + 1), m]),
       dica: 'Em branco: o mês de início do contrato.' },
@@ -491,7 +513,7 @@ const CAMPOS = {
     { k: 'multaMora', l: 'Multa (%)', t: 'pct', dica: 'Em branco: usa o padrão das Configurações.' },
     { k: 'jurosMora', l: 'Juros de mora (% ao mês)', t: 'pct', dica: 'Calculados pro rata die.' },
     { k: 'honorarios', l: 'Honorários advocatícios (%)', t: 'pct' },
-    { k: 'indiceCorrecao', l: 'Índice de correção dos valores em atraso', t: 'select', op: () => [...Object.keys(SERIES_BCB), 'Nenhum'].map(i => [i, i]) },
+    { k: 'indiceCorrecao', l: 'Índice de correção dos valores em atraso', t: 'select', op: () => [...INDICES_CORRECAO, 'Nenhum'].map(i => [i, i]) },
     { sec: 'Controle mensal' },
     { k: 'inicioControle', l: 'Primeiro mês do controle', t: 'month' },
     { k: 'saldoInicial', l: 'Saldo inicial em conta (R$)', t: 'money', dica: 'Valor já em conta e não repassado ao cliente antes do primeiro mês.' },
@@ -602,7 +624,7 @@ async function rotear(recarregar) {
     if ((m = h.match(/^#\/(locadores|locatarios|imoveis|contratos)$/))) return telaLista(m[1]);
     if ((m = h.match(/^#\/(locadores|locatarios|imoveis|contratos)\/([\w-]+)$/))) return telaForm(m[1], m[2]);
     if ((m = h.match(/^#\/contrato\/([\w-]+)$/))) return await telaContrato(m[1]);
-    if ((m = h.match(/^#\/contrato\/([\w-]+)\/debito$/))) return await telaDebito(m[1]);
+    if ((m = h.match(/^#\/contrato\/([\w-]+)\/debito(?:\?c=([\w-]+))?$/))) return await telaDebito(m[1], m[2]);
     if (h === '#/vigentes') return telaVigentes();
     if (h.startsWith('#/inadimplencia')) return await telaInadimplencia(h);
     if ((m = h.match(/^#\/contrato\/([\w-]+)\/(\d{4}-\d{2})$/))) return await telaMes(m[1], m[2]);
@@ -945,7 +967,7 @@ async function telaMes(cid, ym) {
   const cad = calcularExtrato(ct, ext);
   const idx = cad.findIndex(x => x.ym === ym);
   const saldoAnterior = idx > 0 ? cad[idx - 1].c.saldoConta : r2(ct.saldoInicial);
-  const ctxMes = { ym, vindos: recebimentosDiferidos(ext, ym)[ym] };
+  const ctxMes = { ym, vindos: recebimentosLancados(ct, ext, ym)[ym] };
   const ehUltimo = ym === yms[yms.length - 1];
   const anterior = idx > 0 ? cad[idx - 1].mes : null;
   const loc = D.locadores[ct.locadorId];
@@ -1014,14 +1036,14 @@ async function telaMes(cid, ym) {
         <div class="res-l info"><span>Total devido pelo locatário</span><b id="rDev"></b></div>
         <div class="res-l"><span>(+) Recebido do locatário</span><b id="rRec"></b></div>
         <div class="res-l" id="linhaEnc"><span>(+) Multa, juros e correção recebidos</span><b id="rEnc"></b></div>
-        <div class="res-l" id="linhaRecAnt"><span>(+) Recebimentos de meses anteriores (pagos em atraso neste mês)<small id="rRecAntDet"></small></span><b id="rRecAnt"></b></div>
+        <div class="res-l" id="linhaRecAnt"><span>(+) Recebimentos de meses anteriores e de débitos em atraso<small id="rRecAntDet"></small></span><b id="rRecAnt"></b></div>
         <div class="res-l"><span>(−) Total pago pela administradora</span><b id="rPag"></b></div>
         <div class="res-l dest"><span>(=) Saldo líquido do mês</span><b id="rLiq"></b></div>
         <div class="res-l taxa"><span>(−) Taxa de administração
           <span class="taxa-ctl"><input id="taxaPct" class="num" inputmode="decimal" value="${fmtPct(ed.taxaAdm)}"> %
           <select id="taxaBase"><option value="locacao"${ed.baseTaxa !== 'total' ? ' selected' : ''}>sobre locação</option><option value="total"${ed.baseTaxa === 'total' ? ' selected' : ''}>sobre todos os valores recebidos</option></select></span>
           <small id="rBase"></small></span><b id="rTaxa"></b></div>
-        <div class="res-l" id="linhaTaxaAnt"><span>(−) Taxa de administração sobre os recebimentos de meses anteriores</span><b id="rTaxaAnt"></b></div>
+        <div class="res-l" id="linhaTaxaAnt"><span>(−) Taxa de administração sobre os recebimentos de meses anteriores e de débitos em atraso</span><b id="rTaxaAnt"></b></div>
         <div class="res-l dest"><span>(=) Saldo do mês</span><b id="rMes"></b></div>
         <div class="res-l"><span>Disponível para repasse (saldo anterior + saldo do mês)</span><b id="rDisp"></b></div>
         <div class="res-l"><span>(−) Repassado ao cliente</span><b id="rRep"></b></div>
@@ -1162,7 +1184,7 @@ async function telaMes(cid, ym) {
     put('rPag', k.pago); put('rLiq', k.liquido); put('rTaxa', k.taxaMes);
     put('rRecAnt', k.recebidoAnteriores); put('rTaxaAnt', k.taxaAnteriores);
     $('#linhaRecAnt').hidden = $('#linhaTaxaAnt').hidden = !k.anteriores.length;
-    $('#rRecAntDet').textContent = k.anteriores.length ? ' ' + k.anteriores.map(v => `${mesNum(v.ym)}: ${fmtMoeda(v.recebido)} em ${fmtData(v.recebidoEm)}`).join(' · ') : '';
+    $('#rRecAntDet').textContent = k.anteriores.length ? ' ' + k.anteriores.map(v => v.cobranca ? `${v.desc}: ${fmtMoeda(v.recebido)}` : `${mesNum(v.ym)}: ${fmtMoeda(v.recebido)} em ${fmtData(v.recebidoEm)}`).join(' · ') : '';
     put('rMes', k.saldoMes); put('rDisp', k.disponivel); put('rRep', k.repassado); put('rConta', k.saldoConta); put('rAberto', k.emAberto);
     $('#linhaEnc').hidden = !k.encargosRecebidos;
     $('#linhaAberto').hidden = !k.emAberto;
@@ -1474,7 +1496,7 @@ function telaConfig() {
       <div class="campo"><label for="m_multa">Multa (%)</label><input id="m_multa" class="num" inputmode="decimal" value="${fmtPct(cfg.moratorios.multa)}"></div>
       <div class="campo"><label for="m_juros">Juros de mora (% ao mês)</label><input id="m_juros" class="num" inputmode="decimal" value="${fmtPct(cfg.moratorios.juros)}"></div>
       <div class="campo"><label for="m_honorarios">Honorários advocatícios (%)</label><input id="m_honorarios" class="num" inputmode="decimal" value="${fmtPct(cfg.moratorios.honorarios)}"></div>
-      <div class="campo"><label for="m_indice">Índice de correção</label><select id="m_indice">${[...Object.keys(SERIES_BCB), 'Nenhum'].map(i => `<option${i === cfg.moratorios.indice ? ' selected' : ''}>${i}</option>`).join('')}</select></div>
+      <div class="campo"><label for="m_indice">Índice de correção</label><select id="m_indice">${[...INDICES_CORRECAO, 'Nenhum'].map(i => `<option${i === cfg.moratorios.indice ? ' selected' : ''}>${i}</option>`).join('')}</select></div>
       <div class="campo wfull"><label class="inline"><input type="checkbox" id="m_neg"${cfg.moratorios.ignorarNegativos ? ' checked' : ''}> Desconsiderar índices negativos (deflação) na correção</label></div>
     </div>
   </section>
@@ -1602,6 +1624,7 @@ async function importarArquivosDeDados(lista) {
     else if (COLECOES.includes(nome) && j && typeof j.itens === 'object') achados[nome + '.json'] = j;
     else if ((nome === 'config' || nome === 'indices') && j && typeof j === 'object') achados[nome + '.json'] = j;
     else if (j && typeof j.contratoId === 'string' && /^[\w-]+$/.test(j.contratoId) && j.meses) achados[`extratos/${j.contratoId}.json`] = j;
+    else if (j && typeof j.contratoId === 'string' && /^[\w-]+$/.test(j.contratoId) && j.calculos) achados[`calculos/${j.contratoId}.json`] = j;
     else ignorados.push(f.name);
   }
   const nomes = Object.keys(achados);
@@ -1632,7 +1655,7 @@ async function importarBackup(arqs) {
   if (!confirm(`Importar o backup de ${fmtData(j.geradoEm)} (${n} contratos)?\n\nTODOS os dados atuais serão substituídos. Antes, uma cópia dos dados atuais será guardada em _backups.`)) return;
   if (Armaz.modo !== 'local') await copiaDeSeguranca(hoje() + '-antes-da-importacao');
   for (const [p, v] of Object.entries(j.arquivos)) {
-    if (!/^(config|indices|locadores|locatarios|imoveis|contratos)\.json$|^extratos\/[\w-]+\.json$/.test(p)) continue;
+    if (!/^(config|indices|locadores|locatarios|imoveis|contratos)\.json$|^(extratos|calculos)\/[\w-]+\.json$/.test(p)) continue;
     await Armaz.gravar(p, JSON.stringify(v, null, 1));
   }
   aviso('Backup importado.');

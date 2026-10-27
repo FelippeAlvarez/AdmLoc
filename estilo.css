@@ -376,3 +376,12 @@ body:not(.conectado) .bt-menu { display: none !important; }
 .instalar { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--borda, #dde3ea); }
 .instalar .bt-instalar { margin-bottom: 6px; }
 #cvCodigo, #cvGerCod { font-family: ui-monospace, Consolas, monospace; text-transform: uppercase; }
+
+/* Cálculo do débito: tabelas de edição */
+.tab-edicao td { vertical-align: middle; }
+.tab-edicao select { min-width: 11em; }
+.tab-edicao input[type=text]:not(.num) { min-width: 12em; }
+.tab-edicao input[type=date] { min-width: 9.5em; }
+.tab-edicao input.num { min-width: 7.5em; }
+.lista-calc { margin-bottom: 8px; }
+.lista-calc > .bt { margin-top: 6px; }

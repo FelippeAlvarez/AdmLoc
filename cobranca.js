@@ -1,8 +1,22 @@
 'use strict';
 /* Cobrança: débito atualizado com encargos moratórios, inadimplência, contratos vigentes e índices de correção */
 
-// Séries do Banco Central (SGS) com a variação mensal (%) de cada índice
-const SERIES_BCB = { 'IGP-M': 189, 'IPCA': 433, 'INPC': 188, 'IGP-DI': 190 };
+// Séries do Banco Central (SGS): variação mensal (%) dos índices de correção e taxas mensais de juros (SELIC e taxa legal)
+const SERIES_BCB = { 'IGP-M': 189, 'IPCA': 433, 'INPC': 188, 'IGP-DI': 190, 'IPCA-E': 10764, 'SELIC': 4390, 'Taxa legal': 29543 };
+const DESDE_SERIE = { 'Taxa legal': 2024 };
+const TAXAS_JUROS_BCB = ['SELIC', 'Taxa legal'];
+// Índices de correção monetária (para escolha nos contratos e cálculos)
+const INDICES_CORRECAO = ['IGP-M', 'IPCA', 'INPC', 'IGP-DI', 'IPCA-E', 'UFIR-RJ'];
+const INDICES_REAJUSTE = INDICES_CORRECAO.filter(i => i !== 'UFIR-RJ');
+
+// Valores anuais da UFIR-RJ (fonte: SEFAZ-RJ); novos anos podem ser incluídos em Administração › Índices
+const UFIR_RJ_PADRAO = {
+  2000: 1.0641, 2001: 1.1283, 2002: 1.2130, 2003: 1.3584, 2004: 1.4924, 2005: 1.6049, 2006: 1.6992,
+  2007: 1.7495, 2008: 1.8258, 2009: 1.9372, 2010: 2.0183, 2011: 2.1352, 2012: 2.2752, 2013: 2.4066,
+  2014: 2.5473, 2015: 2.7119, 2016: 3.0023, 2017: 3.1999, 2018: 3.2939, 2019: 3.4211, 2020: 3.5550,
+  2021: 3.7053, 2022: 4.0915, 2023: 4.3329, 2024: 4.5373, 2025: 4.7508, 2026: 4.9604,
+};
+const tabelaUfir = () => ({ ...UFIR_RJ_PADRAO, ...(D.indices?.ufirRJ || {}) });
 
 /* ================= Reajuste ================= */
 function mesCorrecaoDe(ct) {
@@ -76,6 +90,15 @@ function diasEntre(de, ate) {
 function fatorCorrecao(indice, mesVenc, mesCalc, ignorarNegativos) {
   const faltando = [];
   if (!indice || indice === 'Nenhum') return { fator: 1, faltando };
+  // UFIR-RJ: valor do ano do cálculo dividido pelo do ano do vencimento
+  if (indice === 'UFIR-RJ') {
+    const t = tabelaUfir(), a0 = +mesVenc.slice(0, 4);
+    let a1 = +mesCalc.slice(0, 4);
+    if (a1 <= a0) return { fator: 1, faltando };
+    if (!t[a0]) return { fator: 1, faltando: [String(a0)] };
+    if (!t[a1]) { faltando.push(String(a1)); while (a1 > a0 && !t[a1]) a1--; }
+    return { fator: Math.round(t[a1] / t[a0] * 1e6) / 1e6, faltando };
+  }
   const serie = D.indices?.series?.[indice] || {};
   let f = 1;
   for (let m = mesVenc; m < mesCalc; m = addMes(m, 1)) {
@@ -98,28 +121,25 @@ function encargosMoratorios(valor, venc, dataCalc, p) {
   return { dias, fator, corrigido, correcao: r2(corrigido - valor), juros, multa, total: r2(corrigido + juros + multa), faltando };
 }
 
-// Meses com valor não pago e vencidos antes da data de referência (o extrato precisa estar carregado)
-function debitosContrato(ct, dataRef) {
-  const ext = D.extratos[ct.id];
-  if (!ext) return [];
-  return calcularExtrato(ct, ext)
-    .map(x => ({ ct, ym: x.ym, mes: x.mes, venc: vencimentoMes(ct, x.ym, x.mes), valor: x.c.emAberto, sit: x.c.situacao }))
-    .filter(d => d.valor > 0 && d.venc < dataRef);
-}
-
 const somaCent = (lista, f) => lista.reduce((s, x) => s + cent(f(x)), 0) / 100;
 
 /* ================= Índices de correção ================= */
-// Busca a série em blocos de até 10 anos (limite da API), em paralelo
+// Busca a série em blocos de até 10 anos (limite da API), um de cada vez e com novas tentativas:
+// o Banco Central recusa muitos pedidos simultâneos
 async function buscarSerieBCB(codigo, desdeAno) {
   const ultimo = new Date().getFullYear(), blocos = [];
   for (let a = desdeAno; a <= ultimo; a += 10) blocos.push([a, Math.min(a + 9, ultimo)]);
-  const partes = await Promise.all(blocos.map(async ([de, ate]) => {
-    const r = await fetch(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${codigo}/dados?formato=json&dataInicial=01/01/${de}&dataFinal=31/12/${ate}`);
-    if (r.status === 404) return [];
-    if (!r.ok) throw new Error(`Banco Central: erro ${r.status}.`);
-    return r.json();
-  }));
+  const partes = [];
+  for (const [de, ate] of blocos) {
+    for (let tentativa = 1; ; tentativa++) {
+      let r = null;
+      try { r = await fetch(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${codigo}/dados?formato=json&dataInicial=01/01/${de}&dataFinal=31/12/${ate}`); } catch { r = null; }
+      if (r?.status === 404) break;
+      if (r?.ok) { partes.push(await r.json()); break; }
+      if (tentativa >= 3) throw new Error(`Banco Central: ${r ? 'erro ' + r.status : 'sem conexão'}.`);
+      await new Promise(ok => setTimeout(ok, 800 * tentativa));
+    }
+  }
   const valores = {};
   for (const { data, valor } of partes.flat()) {
     const [, m, y] = data.split('/');
@@ -144,11 +164,12 @@ async function salvarIndices(valores) {
 
 // Busca no Banco Central os índices informados (desde o último ano já gravado) e grava tudo de uma vez
 async function atualizarIndicesBCB(nomes) {
-  const res = await Promise.all(nomes.map(async nome => {
+  const res = [];
+  for (const nome of nomes) {
     const meses = Object.keys(D.indices?.series?.[nome] || {}).sort();
-    const desde = meses.length ? +meses[meses.length - 1].slice(0, 4) - 1 : 2000;
-    return [nome, await buscarSerieBCB(SERIES_BCB[nome], desde)];
-  }));
+    const desde = meses.length ? +meses[meses.length - 1].slice(0, 4) - 1 : (DESDE_SERIE[nome] || 2000);
+    res.push([nome, await buscarSerieBCB(SERIES_BCB[nome], desde)]);
+  }
   const valores = Object.fromEntries(res.filter(([, v]) => Object.keys(v).length));
   if (!Object.keys(valores).length) throw new Error('O Banco Central não retornou dados.');
   await salvarIndices(valores);
@@ -184,17 +205,19 @@ function secaoIndicesHTML() {
     const s = D.indices?.series?.[nome] || {};
     const meses = Object.keys(s).sort();
     const u = meses[meses.length - 1];
-    return `<tr><td><b>${nome}</b></td><td class="num">${meses.length}</td><td>${meses.length ? nomeMes(meses[0]) + ' a ' + nomeMes(u) : '—'}</td>
+    return `<tr><td><b>${nome}</b>${TAXAS_JUROS_BCB.includes(nome) ? ' <span class="dica">(taxa de juros)</span>' : ''}</td><td class="num">${meses.length}</td><td>${meses.length ? nomeMes(meses[0]) + ' a ' + nomeMes(u) : '—'}</td>
       <td class="num">${u ? fmtPct(s[u]) + '%' : ''}</td><td><button class="bt pequeno" data-idx="${nome}">Atualizar</button></td></tr>`;
   }).join('');
+  const ufir = Object.keys(tabelaUfir()).sort(), ultU = ufir[ufir.length - 1];
   return `<section class="cartao form" id="secIndices">
-    <h2>Índices de correção monetária</h2>
-    <p class="dica">Variações mensais (%) usadas para corrigir os débitos, obtidas do Banco Central (Sistema Gerenciador de Séries). O aplicativo atualiza os índices automaticamente ao calcular débitos; use os botões para forçar a atualização. O fator de correção acumula a variação do mês do vencimento até o mês anterior ao da data do cálculo.</p>
-    <div class="rolagem"><table class="tabela"><thead><tr><th>Índice</th><th class="num">Meses</th><th>Período</th><th class="num">Último</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>
+    <h2>Índices de correção monetária e taxas de juros</h2>
+    <p class="dica">Variações mensais (%) usadas para corrigir os débitos e taxas mensais de juros (SELIC e taxa legal do art. 406 do Código Civil), obtidas do Banco Central (Sistema Gerenciador de Séries). O aplicativo atualiza tudo automaticamente ao calcular débitos; use os botões para forçar a atualização. O fator de correção acumula a variação do mês do vencimento até o mês anterior ao da data do cálculo. A UFIR-RJ (SEFAZ-RJ) tem um valor por ano: o fator é o valor do ano do cálculo dividido pelo do ano do vencimento.</p>
+    <div class="rolagem"><table class="tabela"><thead><tr><th>Índice</th><th class="num">Meses</th><th>Período</th><th class="num">Último</th><th></th></tr></thead><tbody>${linhas}
+      <tr><td><b>UFIR-RJ</b> <span class="dica">(valor anual)</span></td><td class="num">${ufir.length} anos</td><td>${ufir[0]} a ${ultU}</td><td class="num">${Number(tabelaUfir()[ultU]).toLocaleString('pt-BR', { minimumFractionDigits: 4 })}</td><td></td></tr></tbody></table></div>
     <div class="acoes-linha"><button class="bt" id="btIdxTodos">Atualizar todos pelo Banco Central</button></div>
     <details class="detalhes"><summary>Informar índices manualmente</summary>
-      <p class="dica">Uma linha por mês, no formato <b>MM/AAAA;variação</b> (ex.: <code>09/2026;0,45</code>). Também é possível colar duas colunas copiadas de uma planilha. Os meses informados substituem os existentes.</p>
-      <div class="grade-form"><div class="campo"><label for="idxManualNome">Índice</label><select id="idxManualNome">${Object.keys(SERIES_BCB).map(n => `<option>${n}</option>`).join('')}</select></div></div>
+      <p class="dica">Uma linha por mês, no formato <b>MM/AAAA;variação</b> (ex.: <code>09/2026;0,45</code>). Para a UFIR-RJ, uma linha por ano: <b>AAAA;valor</b> (ex.: <code>2027;5,1234</code>). Também é possível colar duas colunas copiadas de uma planilha. Os valores informados substituem os existentes.</p>
+      <div class="grade-form"><div class="campo"><label for="idxManualNome">Índice</label><select id="idxManualNome">${[...Object.keys(SERIES_BCB), 'UFIR-RJ'].map(n => `<option>${n}</option>`).join('')}</select></div></div>
       <textarea id="idxManual" rows="5" placeholder="09/2026;0,45"></textarea>
       <div class="acoes-linha"><button class="bt" id="btIdxManual">Incluir valores</button></div>
     </details>
@@ -222,6 +245,24 @@ function ligarIndices() {
     await atualizar(Object.keys(SERIES_BCB));
   }));
   $('#btIdxManual').addEventListener('click', () => executar(async () => {
+    if ($('#idxManualNome').value === 'UFIR-RJ') {
+      const anos = {};
+      for (const linha of $('#idxManual').value.split(/\r?\n/)) {
+        const m = linha.match(/(\d{4})\D+?(\d+(?:[.,]\d+)?)/);
+        if (m && +m[1] >= 1990 && +m[1] <= 2100) anos[m[1]] = Number(m[2].replace(',', '.'));
+      }
+      if (!Object.keys(anos).length) throw new Error('Nenhuma linha no formato AAAA;valor.');
+      await backupDiario();
+      await comTrava(async () => {
+        const atual = await lerJSON('indices.json', { series: {} });
+        atual.ufirRJ = { ...(atual.ufirRJ || {}), ...anos };
+        atual.rev = (atual.rev || 0) + 1;
+        await Armaz.gravar('indices.json', JSON.stringify(atual));
+        D.indices = atual;
+      });
+      aviso(`UFIR-RJ: ${Object.keys(anos).length} ano(s) incluído(s).`);
+      return redesenharIndices();
+    }
     const valores = {};
     for (const linha of $('#idxManual').value.split(/\r?\n/)) {
       const m = linha.match(/(\d{1,2})[\/.-](\d{4})\D+?(-?\d+(?:[.,]\d+)?)/) || linha.match(/(\d{4})-(\d{2})\D+?(-?\d+(?:[.,]\d+)?)/);
@@ -295,186 +336,9 @@ function xlsxDeTabela({ titulo, linhasTitulo = [], cols, linhas, nomeFolha, nota
 
 const oferecerArquivo = salvarPlanilha;
 
-/* ================= Cálculo do débito de um contrato ================= */
-function montarDebito(ct, st) {
-  const p = st.p;
-  const itens = [
-    ...debitosContrato(ct, st.data).map(d => ({ id: d.ym, ref: mesNum(d.ym), ym: d.ym, venc: d.venc, valor: d.valor, parcial: d.sit === 'parcial' })),
-    ...st.extras.filter(x => x.venc && x.valor).map(x => ({ id: x.id, ref: x.desc || 'Outro débito', venc: x.venc, valor: x.valor, extra: true })),
-  ].sort((a, b) => comparar(a.venc, b.venc));
-  const faltando = new Set();
-  const linhas = itens.map(it => {
-    const e = encargosMoratorios(it.valor, it.venc, st.data, p);
-    e.faltando.forEach(m => faltando.add(m));
-    return { ...it, e, incluido: !st.fora.has(it.id) };
-  });
-  const inc = linhas.filter(l => l.incluido);
-  const tot = {
-    original: somaCent(inc, l => l.valor), correcao: somaCent(inc, l => l.e.correcao), corrigido: somaCent(inc, l => l.e.corrigido),
-    juros: somaCent(inc, l => l.e.juros), multa: somaCent(inc, l => l.e.multa), subtotal: somaCent(inc, l => l.e.total),
-  };
-  tot.honorarios = r2(tot.subtotal * p.honorarios / 100);
-  tot.total = r2(tot.subtotal + tot.honorarios);
-  return { linhas, inc, tot, faltando: [...faltando].sort() };
-}
-
-const descCriterios = (p, data) => `Débito atualizado até ${fmtData(data)}. Correção monetária: ${p.indice === 'Nenhum' ? 'não aplicada' : p.indice + (p.ignorarNegativos ? ' (desconsiderados os índices negativos)' : '')}. Juros de mora: ${fmtPct(p.juros)}% ao mês, pro rata die. Multa: ${fmtPct(p.multa)}%. Honorários advocatícios: ${fmtPct(p.honorarios)}%.`;
-const notaMetodo = 'Critérios: o fator de correção acumula a variação mensal do índice desde o mês do vencimento até o mês anterior ao da data do cálculo (fonte: Banco Central do Brasil, SGS). Os juros incidem sobre o valor corrigido, à taxa mensal dividida por 30, multiplicada pelos dias de atraso. A multa incide sobre o valor corrigido. Os honorários incidem sobre o total do débito (valor corrigido + juros + multa).';
+/* ================= Cálculo do débito: debito.js, debito-tela.js, debito-saida.js e motor.js ================= */
 const notaFaltando = f => f.length ? `Atenção: índice não disponível para ${f.map(m => m.split('-').reverse().join('/')).join(', ')} (considerado 0%).` : '';
 
-async function telaDebito(cid) {
-  const ct = D.contratos[cid];
-  if (!ct) throw new Error('Contrato não encontrado.');
-  await carregarExtrato(cid);
-  await aguardarIndices();
-  const im = D.imoveis[ct.imovelId], lt = D.locatarios[ct.locatarioId];
-  const st = { data: hoje(), p: paramsMora(ct), fora: new Set(), extras: [] };
-
-  $('#conteudo').innerHTML = cabecalho('Cálculo do débito',
-    `${esc(rotuloContrato(ct))} · ${esc(descImovel(im))}<br>Locatário: <b>${esc(lt?.nome || '—')}</b> · Cliente: <b>${esc(nomeDe('locadores', ct.locadorId))}</b>`,
-    botoesPDF('debPdf') + `<button class="bt primario" id="btDebXlsx">Salvar planilha Excel</button>`,
-    `<a class="voltar" href="#/contrato/${cid}">&larr; ${esc(rotuloContrato(ct))}</a>`) + `
-  <section class="cartao form">
-    <h2>Critérios do cálculo</h2>
-    <div class="grade-form">
-      <div class="campo"><label for="dData">Data do cálculo</label><input type="date" id="dData" value="${st.data}"></div>
-      <div class="campo"><label for="dIndice">Correção monetária</label><select id="dIndice">${[...Object.keys(SERIES_BCB), 'Nenhum'].map(i => `<option${i === st.p.indice ? ' selected' : ''}>${i}</option>`).join('')}</select></div>
-      <div class="campo"><label for="dMulta">Multa (%)</label><input id="dMulta" class="num" inputmode="decimal" value="${fmtPct(st.p.multa)}"></div>
-      <div class="campo"><label for="dJuros">Juros (% ao mês, pro rata die)</label><input id="dJuros" class="num" inputmode="decimal" value="${fmtPct(st.p.juros)}"></div>
-      <div class="campo"><label for="dHon">Honorários advocatícios (%)</label><input id="dHon" class="num" inputmode="decimal" value="${fmtPct(st.p.honorarios)}"></div>
-      <div class="campo w2"><label>&nbsp;</label><label class="inline"><input type="checkbox" id="dNeg"${st.p.ignorarNegativos ? ' checked' : ''}> Desconsiderar índices negativos</label></div>
-    </div>
-    <p class="dica">Os valores vêm do cadastro do contrato e podem ser alterados só para este cálculo.</p>
-  </section>
-  <section class="cartao">
-    <div class="cartao-cab"><h2>Débitos vencidos até a data do cálculo</h2><div class="acoes"><button class="bt pequeno" id="btAddExtra">+ Outro débito</button></div></div>
-    <div id="tabDeb"></div>
-    <p class="alerta" id="avisoIdx" hidden></p>
-  </section>
-  <section class="cartao"><h2>Total do débito</h2><div class="resumo resumo-estreito" id="totDeb"></div></section>`;
-
-  const render = () => {
-    const d = montarDebito(ct, st);
-    const extras = st.extras.map(x => `<tr class="extra" data-extra="${x.id}"><td></td>
-      <td><input data-c="desc" value="${esc(x.desc)}" placeholder="Descrição (ex.: reparos)"></td>
-      <td><input type="date" data-c="venc" value="${esc(x.venc)}"></td>
-      <td><input class="num" inputmode="decimal" data-tipo="money" data-c="valor" value="${x.valor ? fmtNum(x.valor) : ''}"></td>
-      <td colspan="5" class="dica">${x.venc && x.valor ? '' : 'Informe o vencimento e o valor.'}</td><td><button class="bt-x" data-del="${x.id}" title="Remover">&times;</button></td></tr>`).join('');
-    $('#tabDeb').innerHTML = d.linhas.length || st.extras.length ? `<div class="rolagem"><table class="tabela"><thead><tr><th></th><th>Referência</th><th>Vencimento</th><th class="num">Valor em aberto</th><th class="num">Fator de correção</th><th class="num">Valor corrigido</th><th class="num">Dias</th><th class="num">Juros</th><th class="num">Multa</th><th class="num">Total</th></tr></thead><tbody>
-      ${d.linhas.map(l => `<tr class="${l.incluido ? '' : 'excluido'}"><td><input type="checkbox" data-inc="${l.id}"${l.incluido ? ' checked' : ''} title="Incluir no cálculo"></td>
-        <td>${l.ym ? `<a href="#/contrato/${cid}/${l.ym}">${esc(l.ref)}</a>` : esc(l.ref)}${l.parcial ? ' <span class="chip aberto">saldo parcial</span>' : ''}</td><td>${fmtData(l.venc)}</td>
-        <td class="num">${fmtNum(l.valor)}</td><td class="num">${fmtCelula(l.e.fator, 'fator')}</td><td class="num">${fmtNum(l.e.corrigido)}</td><td class="num">${l.e.dias}</td>
-        <td class="num">${fmtNum(l.e.juros)}</td><td class="num">${fmtNum(l.e.multa)}</td><td class="num"><b>${fmtNum(l.e.total)}</b></td></tr>`).join('')}
-      ${extras}
-      <tr class="subtotal"><td></td><td>Totais</td><td></td><td class="num">${fmtNum(d.tot.original)}</td><td></td><td class="num">${fmtNum(d.tot.corrigido)}</td><td></td><td class="num">${fmtNum(d.tot.juros)}</td><td class="num">${fmtNum(d.tot.multa)}</td><td class="num">${fmtNum(d.tot.subtotal)}</td></tr>
-      </tbody></table></div>` : `<p class="vazio">Nenhum débito vencido até ${fmtData(st.data)}. Os meses aparecem aqui quando estão marcados como <b>não pagos</b> (ou pagos em parte) e o vencimento já passou.</p>`;
-    const t = d.tot;
-    $('#totDeb').innerHTML = [
-      ['Valor original em aberto', t.original], ['(+) Correção monetária', t.correcao], ['(+) Juros de mora', t.juros], ['(+) Multa', t.multa],
-      ['(=) Subtotal', t.subtotal, 'dest'], [`(+) Honorários advocatícios (${fmtPct(st.p.honorarios)}%)`, t.honorarios], ['(=) Total do débito', t.total, 'final'],
-    ].map(([r, v, c]) => `<div class="res-l ${c || ''}"><span>${r}</span><b>${fmtMoeda(v)}</b></div>`).join('');
-    const av = notaFaltando(d.faltando);
-    $('#avisoIdx').hidden = !av;
-    $('#avisoIdx').textContent = av + (av ? ' Atualize os índices em Configurações ou informe-os manualmente.' : '');
-    return d;
-  };
-  render();
-
-  const num = id => r2(parseValor($(id).value));
-  $('#dData').addEventListener('change', e => { if (e.target.value) { st.data = e.target.value; render(); } });
-  $('#dIndice').addEventListener('change', e => { st.p.indice = e.target.value; render(); });
-  $('#dNeg').addEventListener('change', e => { st.p.ignorarNegativos = e.target.checked; render(); });
-  [['#dMulta', 'multa'], ['#dJuros', 'juros'], ['#dHon', 'honorarios']].forEach(([id, k]) => $(id).addEventListener('change', () => { st.p[k] = num(id); render(); }));
-  $('#tabDeb').addEventListener('change', e => {
-    const t = e.target;
-    if (t.dataset.inc) { if (t.checked) st.fora.delete(t.dataset.inc); else st.fora.add(t.dataset.inc); return render(); }
-    const tr = t.closest('[data-extra]');
-    if (tr && t.dataset.c) {
-      const x = st.extras.find(z => z.id === tr.dataset.extra);
-      x[t.dataset.c] = t.dataset.c === 'valor' ? r2(parseValor(t.value)) : t.value;
-      render();
-    }
-  });
-  $('#tabDeb').addEventListener('click', e => {
-    if (!e.target.dataset.del) return;
-    st.extras = st.extras.filter(x => x.id !== e.target.dataset.del);
-    render();
-  });
-  $('#btAddExtra').addEventListener('click', () => { st.extras.push({ id: novoId(), desc: '', venc: '', valor: 0 }); render(); $('#tabDeb tr.extra:last-of-type input').focus(); });
-
-  const validar = () => { const d = montarDebito(ct, st); if (!d.inc.length) throw new Error('Não há débitos incluídos no cálculo.'); return d; };
-  ligarBotoesPDF('debPdf', async () => ({ doc: pdfDebito(ct, validar(), st), nome: nomeArquivo('debito', 'contrato', ct.codigo, st.data) + '.pdf' }));
-  $('#btDebXlsx').addEventListener('click', () => executar(async () => {
-    const d = validar();
-    oferecerArquivo(xlsxDebito(ct, d, st), nomeArquivo('planilha-debito', 'contrato', ct.codigo, st.data) + '.xlsx');
-  }));
-}
-
-function cabecalhoDebito(ct) {
-  const lt = D.locatarios[ct.locatarioId];
-  return [
-    `${rotuloContrato(ct)} - ${descImovel(D.imoveis[ct.imovelId])}`,
-    `Locatário: ${lt?.nome || '—'}${lt?.documento ? ' (CPF/CNPJ ' + lt.documento + ')' : ''}   ·   Cliente (locador): ${nomeDe('locadores', ct.locadorId)}`,
-  ];
-}
-
-function pdfDebito(ct, d, st) {
-  const [l1, l2] = cabecalhoDebito(ct);
-  const t = d.tot;
-  return pdfDeTabela({
-    titulo: 'Demonstrativo de débito', paisagem: true,
-    linhasTitulo: [[l1, 10, 'bold'], [l2, 9], [descCriterios(st.p, st.data), 8.5, 'normal', COR_SUAVE]],
-    cols: [{ t: 'Referência', w: 50 }, { t: 'Vencimento', w: 24, tipo: 'data' }, { t: 'Valor original', w: 28, tipo: 'moeda' }, { t: 'Fator de correção', w: 24, tipo: 'fator' },
-      { t: 'Valor corrigido', w: 28, tipo: 'moeda' }, { t: 'Dias de atraso', w: 16, tipo: 'inteiro' }, { t: 'Juros', w: 30, tipo: 'moeda' }, { t: 'Multa', w: 30, tipo: 'moeda' }, { t: 'Total', w: 39, tipo: 'moeda' }],
-    linhas: [
-      ...d.inc.map(l => ({ c: [l.ref + (l.parcial ? ' (saldo)' : ''), l.venc, l.valor, l.e.fator, l.e.corrigido, l.e.dias, l.e.juros, l.e.multa, l.e.total] })),
-      { c: ['Totais', '', t.original, '', t.corrigido, '', t.juros, t.multa, t.subtotal], total: true },
-    ],
-    resumo: [
-      ['Valor original em aberto', t.original], ['(+) Correção monetária', t.correcao], ['(+) Juros de mora', t.juros], ['(+) Multa', t.multa],
-      ['(=) Subtotal', t.subtotal, 'b'], [`(+) Honorários advocatícios (${fmtPct(st.p.honorarios)}%)`, t.honorarios], ['(=) Total do débito', t.total, 'f'],
-    ],
-    notas: [notaMetodo, notaFaltando(d.faltando)].filter(Boolean),
-  });
-}
-
-// Planilha com fórmulas: os percentuais e a data podem ser alterados no próprio Excel
-function xlsxDebito(ct, d, st) {
-  const p = st.p, [l1, l2] = cabecalhoDebito(ct);
-  const L = [...cabecalhoXLSX(), [{ v: 'Planilha de débito', s: 'tit' }], [l1], [l2], null];
-  // Parâmetros: as fórmulas apontam para estas células (coluna B)
-  const param = (rotulo, valor) => { L.push([{ v: rotulo, s: 'b' }, valor]); return '$B$' + L.length; };
-  const DATA = param('Data do cálculo', { v: st.data, s: 'd' });
-  param('Índice de correção monetária', p.indice + (p.ignorarNegativos ? ' (sem índices negativos)' : ''));
-  const MULTA = param('Multa', { v: p.multa / 100, s: 'p' });
-  const JUROS = param('Juros de mora ao mês (pro rata die)', { v: p.juros / 100, s: 'p' });
-  const HON = param('Honorários advocatícios', { v: p.honorarios / 100, s: 'p' });
-  L.push(null, { c: ['Referência', 'Vencimento', 'Valor original', 'Fator de correção', 'Valor corrigido', 'Dias de atraso', 'Juros', 'Multa', 'Total'].map(v => ({ v, s: 'cab' })), altura: 30 });
-  const ini = L.length + 1;
-  for (const l of d.inc) {
-    const n = L.length + 1;
-    L.push([l.ref, { v: l.venc, s: 'd' }, { v: l.valor, s: 'm' }, { v: l.e.fator, s: 'f' },
-      { f: `ROUND(C${n}*D${n},2)`, v: l.e.corrigido, s: 'm' }, { f: `MAX(0,${DATA}-B${n})`, v: l.e.dias, s: 'i' },
-      { f: `ROUND(E${n}*${JUROS}/30*F${n},2)`, v: l.e.juros, s: 'm' }, { f: `IF(F${n}>0,ROUND(E${n}*${MULTA},2),0)`, v: l.e.multa, s: 'm' },
-      { f: `E${n}+G${n}+H${n}`, v: l.e.total, s: 'm' }]);
-  }
-  const fim = L.length, nt = L.length + 1, t = d.tot;
-  const soma = (col, v) => ({ f: `SUM(${col}${ini}:${col}${fim})`, v, s: 'mt' });
-  L.push([{ v: 'Totais', s: 'bt' }, { v: '', s: 'bt' }, soma('C', t.original), { v: '', s: 'bt' }, soma('E', t.corrigido), { v: '', s: 'bt' }, soma('G', t.juros), soma('H', t.multa), soma('I', t.subtotal)]);
-  L.push(null);
-  const ns = L.length + 1;
-  L.push([{ v: 'Subtotal (valor corrigido + juros + multa)', s: 'b' }, null, null, null, null, null, null, null, { f: `I${nt}`, v: t.subtotal, s: 'm' }]);
-  const nh = L.length + 1;
-  L.push([{ v: 'Honorários advocatícios', s: 'b' }, null, null, null, null, null, null, null, { f: `ROUND(I${ns}*${HON},2)`, v: t.honorarios, s: 'm' }]);
-  L.push([{ v: 'Total do débito', s: 'bt' }, { v: '', s: 'bt' }, { v: '', s: 'bt' }, { v: '', s: 'bt' }, { v: '', s: 'bt' }, { v: '', s: 'bt' }, { v: '', s: 'bt' }, { v: '', s: 'bt' }, { f: `I${ns}+I${nh}`, v: t.total, s: 'mt' }]);
-  L.push(null);
-  L.push([notaMetodo]);
-  L.push(['Os fatores de correção foram calculados para a data do cálculo informada. Se a data for alterada na planilha, os dias, juros, multa e honorários são recalculados, mas os fatores de correção não.']);
-  if (d.faltando.length) L.push([notaFaltando(d.faltando)]);
-  return gerarXLSX([{ nome: 'Débito', linhas: L, larguras: [36, 13, 15, 15, 15, 11, 13, 13, 15] }]);
-}
-
-/* ================= Inadimplência ================= */
 async function telaInadimplencia(h) {
   const q = new URLSearchParams(h.split('?')[1] || '');
   const st = { data: q.get('data') || hoje(), tipo: q.get('tipo') || 'todos', id: q.get('id') || '', agrupar: q.get('agrupar') || 'locatario', hon: q.get('hon') === '1' };
@@ -484,11 +348,11 @@ async function telaInadimplencia(h) {
 
   const filtro = ct => st.tipo === 'todos' || !st.id ? true
     : st.tipo === 'contrato' ? ct.id === st.id : st.tipo === 'locatario' ? ct.locatarioId === st.id : ct.locadorId === st.id;
-  const itens = todos.filter(filtro).flatMap(ct => debitosContrato(ct, st.data).map(d => {
+  // Mesmo motor do Cálculo do débito: critérios do contrato e pagamentos já abatidos (art. 354 do CC)
+  const itens = todos.filter(filtro).flatMap(ct => debitoPorMes(ct, st.data).map(d => {
     const p = paramsMora(ct);
-    const e = encargosMoratorios(d.valor, d.venc, st.data, p);
-    const hon = st.hon ? r2(e.total * p.honorarios / 100) : 0;
-    return { ...d, e, hon, encargos: r2(e.total - d.valor + hon), atualizado: r2(e.total + hon) };
+    const hon = st.hon ? r2(d.total * p.honorarios / 100) : 0;
+    return { ...d, e: { dias: d.dias, faltando: d.faltando }, hon, encargos: r2(d.total - d.valor + hon), atualizado: r2(d.total + hon) };
   }));
   const chave = { contrato: d => d.ct.id, locatario: d => d.ct.locatarioId, locador: d => d.ct.locadorId }[st.agrupar];
   const rotulo = { contrato: d => rotuloContrato(d.ct) + ' · ' + descImovel(D.imoveis[d.ct.imovelId]), locatario: d => 'Locatário: ' + nomeDe('locatarios', d.ct.locatarioId), locador: d => 'Cliente: ' + nomeDe('locadores', d.ct.locadorId) }[st.agrupar];
@@ -537,7 +401,7 @@ async function telaInadimplencia(h) {
       <tr class="total-geral"><td colspan="6">Total geral</td><td class="num">${fmtNum(tot.valor)}</td><td class="num">${fmtNum(tot.encargos)}</td><td class="num">${fmtNum(tot.atualizado)}</td></tr>
     </tbody></table></div>` : '<p class="vazio">Nenhum débito vencido e não pago para a seleção escolhida.</p>'}
     ${faltando.length ? `<p class="alerta">${esc(notaFaltando(faltando))}</p>` : ''}
-    <p class="dica">Encargos: correção monetária, juros pro rata die e multa, conforme os critérios de cada contrato${st.hon ? ', mais honorários advocatícios' : ''}. Para o cálculo detalhado de um contrato, use <b>Cálculo do débito</b> na tela do contrato.</p>
+    <p class="dica">Encargos: correção monetária, juros e multa, conforme os critérios de cada contrato, já abatidos os pagamentos (pagamentos em parte lançados nos meses e os registrados no Cálculo do débito)${st.hon ? ', mais honorários advocatícios' : ''}. Para o cálculo detalhado de um contrato, use <b>Cálculo do débito</b> na tela do contrato.</p>
   </section>`;
   ligarBusca();
 

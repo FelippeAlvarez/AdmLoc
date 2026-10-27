@@ -56,6 +56,10 @@ async function recebimentosDe(contratos) {
       const data = mes.recebidoEm || '';
       lista.push({ ct, ym, data, caixa: data ? data.slice(0, 7) : ym, semData: !data, ...r });
     }
+    // Pagamentos de débitos em atraso lançados na prestação de contas (Cálculo do débito), na data da disponibilização
+    for (const v of Object.values(recebimentosLancados(ct, ext)).flat().filter(v => v.cobranca)) {
+      lista.push({ ct, ym: v.ym, data: v.disponivelEm, caixa: v.ym, semData: false, cobranca: true, ...v.r });
+    }
   }
   return lista;
 }
