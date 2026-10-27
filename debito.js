@@ -17,9 +17,14 @@
 /* ================= Dados ================= */
 const calcsVazio = cid => ({ contratoId: cid, rev: 0, amortizacoes: [], calculos: {}, acordos: {} });
 
-async function carregarCalculos(cid) {
+// validade (ms): reaproveita o que foi lido há menos tempo que isso (painel e relatórios leem todos os contratos);
+// as telas de cálculo e de acordos sempre releem (validade 0)
+const calcsLidosEm = {};
+async function carregarCalculos(cid, validade = 0) {
+  if (validade && D.calcs[cid] && Date.now() - (calcsLidosEm[cid] || 0) < validade) return D.calcs[cid];
   const a = await lerJSON(`calculos/${cid}.json`, null);
   D.calcs[cid] = { ...calcsVazio(cid), ...(a || {}) };
+  calcsLidosEm[cid] = Date.now();
   return D.calcs[cid];
 }
 

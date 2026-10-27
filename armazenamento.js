@@ -53,7 +53,34 @@ async function buscar(url, opcoes, onde = 'servidor') {
   catch (e) { throw new ErroConexao(onde); }
 }
 
-const buscarNuvem = (url, opcoes) => buscar(url, opcoes, 'nuvem');
+/*
+  Nuvem (Dropbox, Google Drive): no máximo 4 pedidos ao mesmo tempo e novas tentativas, com espera crescente,
+  quando o serviço recusa por excesso de pedidos (429), tem erro temporário (5xx) ou a rede falha. Telas que leem
+  muitos arquivos (painel, inadimplência, relatórios) disparavam dezenas de pedidos de uma vez e eram recusadas.
+*/
+const NUVEM_MAX = 4;
+let nuvemAtivos = 0;
+const nuvemFila = [];
+async function vezNuvem() {
+  if (nuvemAtivos >= NUVEM_MAX) await new Promise(ok => nuvemFila.push(ok));
+  nuvemAtivos++;
+}
+function fimNuvem() {
+  nuvemAtivos--;
+  const proximo = nuvemFila.shift();
+  if (proximo) proximo();
+}
+async function buscarNuvem(url, opcoes) {
+  for (let tentativa = 1; ; tentativa++) {
+    await vezNuvem();
+    let r = null;
+    try { r = await fetch(url, opcoes); } catch { r = null; } finally { fimNuvem(); }
+    if (r && r.status !== 429 && r.status < 500) return r;
+    if (tentativa >= 6) { if (!r) throw new ErroConexao('nuvem'); return r; }
+    const pedido = Number(r?.headers.get('Retry-After')) || 0;
+    await new Promise(ok => setTimeout(ok, (pedido ? pedido * 1000 : 400 * 2 ** (tentativa - 1)) + Math.random() * 400));
+  }
+}
 
 // Outra pessoa gravou o mesmo arquivo entre a leitura e a gravação (trava do Dropbox): o app relê e refaz
 class ErroCorrida extends Error {

@@ -38,6 +38,7 @@ async function telaDebito(cid, calcId) {
   const ct = D.contratos[cid];
   if (!ct) throw new Error('Contrato não encontrado.');
   await carregarExtrato(cid);
+  await carregarCalculos(cid); // sempre a versão mais recente (outro aparelho pode ter alterado)
   await aguardarIndices();
   const salvos = () => Object.values(D.calcs[cid]?.calculos || {}).sort((a, b) => comparar(b.atualizadoEm || '', a.atualizadoEm || ''));
   const copia = x => JSON.parse(JSON.stringify(x));

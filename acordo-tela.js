@@ -34,6 +34,7 @@ async function telaAcordos(cid) {
   const ct = D.contratos[cid];
   if (!ct) throw new Error('Contrato não encontrado.');
   await carregarExtrato(cid);
+  await carregarCalculos(cid); // sempre a versão mais recente (outro aparelho pode ter alterado)
   const lista = acordosDoContrato(cid).sort((a, b) => comparar(b.data, a.data));
   $('#conteudo').innerHTML = cabecalho('Acordos de pagamento', `${esc(rotuloContrato(ct))} · Locatário: <b>${esc(nomeDe('locatarios', ct.locatarioId))}</b>`,
     `<a class="bt primario" href="#/contrato/${cid}/acordo/novo">+ Novo acordo</a>`, `<a class="voltar" href="#/contrato/${cid}">&larr; ${esc(rotuloContrato(ct))}</a>`) + `
@@ -52,6 +53,7 @@ async function telaAcordo(cid, id, calcId) {
   const ct = D.contratos[cid];
   if (!ct) throw new Error('Contrato não encontrado.');
   await carregarExtrato(cid);
+  await carregarCalculos(cid); // sempre a versão mais recente (outro aparelho pode ter alterado)
   await aguardarIndices();
   const salvo = D.calcs[cid].acordos?.[id];
   if (id !== 'novo' && !salvo) throw new Error('Acordo não encontrado.');

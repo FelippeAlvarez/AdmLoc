@@ -205,7 +205,7 @@ async function salvarConfig(novo) {
 
 async function carregarExtrato(cid) {
   // Os cálculos de débito do contrato vêm junto: pagamentos lançados neles podem entrar na prestação de contas
-  const [e] = await Promise.all([lerJSON(`extratos/${cid}.json`, { contratoId: cid, meses: {} }), carregarCalculos(cid)]);
+  const [e] = await Promise.all([lerJSON(`extratos/${cid}.json`, { contratoId: cid, meses: {} }), carregarCalculos(cid, 120000)]);
   e.meses = e.meses || {};
   D.extratos[cid] = e;
   return e;
@@ -654,8 +654,9 @@ async function rotear(recarregar) {
     console.error(e);
     if (e.sessao) { Auth.sair(); return telaLogin(e.message); }
     c.innerHTML = `<section class="cartao erro"><h2>${e.conexao ? 'Sem conexão com os dados' : 'Não foi possível abrir esta tela'}</h2><p>${esc(e.message)}</p>
-      <div class="acoes-linha"><button class="bt primario" id="btTentarDeNovo">Tentar novamente</button><a class="bt" href="#/painel">Voltar ao painel</a></div></section>`;
+      <div class="acoes-linha"><button class="bt primario" id="btTentarDeNovo">Tentar novamente</button><button class="bt" id="btVoltarPainel">Voltar ao painel</button></div></section>`;
     $('#btTentarDeNovo').addEventListener('click', () => rotear(true));
+    $('#btVoltarPainel').addEventListener('click', () => { if (location.hash === '#/painel') rotear(true); else location.hash = '#/painel'; });
   }
 }
 
