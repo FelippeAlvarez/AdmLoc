@@ -41,10 +41,10 @@ const IDB = {
 
 // Falha de rede (servidor desligado, sem internet): mensagem clara em vez de "Failed to fetch"
 class ErroConexao extends Error {
-  constructor(onde) {
-    super(onde === 'servidor'
+  constructor(onde, detalhe) {
+    super((onde === 'servidor'
       ? 'Não foi possível falar com o servidor. Verifique se a janela do servidor ("Iniciar servidor.bat") está aberta no computador principal e se este aparelho está na mesma rede; depois clique em "Tentar novamente".'
-      : 'Não foi possível acessar a nuvem. Verifique a conexão com a internet e clique em "Tentar novamente".');
+      : 'Não foi possível acessar a nuvem. Verifique a conexão com a internet e clique em "Tentar novamente".') + (detalhe ? ` (Detalhe técnico: ${detalhe})` : ''));
     this.conexao = true;
   }
 }
@@ -73,10 +73,16 @@ function fimNuvem() {
 async function buscarNuvem(url, opcoes) {
   for (let tentativa = 1; ; tentativa++) {
     await vezNuvem();
-    let r = null;
-    try { r = await fetch(url, opcoes); } catch { r = null; } finally { fimNuvem(); }
+    let r = null, falha = '';
+    try { r = await fetch(url, opcoes); } catch (e) { r = null; falha = e?.message || 'falha de rede'; } finally { fimNuvem(); }
     if (r && r.status !== 429 && r.status < 500) return r;
-    if (tentativa >= 6) { if (!r) throw new ErroConexao('nuvem'); return r; }
+    if (tentativa >= 6) {
+      if (r) return r;
+      // Para o diagnóstico: o serviço e o arquivo pedidos (o caminho vai no cabeçalho Dropbox-API-Arg)
+      let arq = '';
+      try { arq = JSON.parse(opcoes?.headers?.['Dropbox-API-Arg'] || '{}').path || ''; } catch { arq = ''; }
+      throw new ErroConexao('nuvem', `${new URL(url).pathname}${arq ? ' ' + arq : ''}: ${falha}`);
+    }
     const pedido = Number(r?.headers.get('Retry-After')) || 0;
     await new Promise(ok => setTimeout(ok, (pedido ? pedido * 1000 : 400 * 2 ** (tentativa - 1)) + Math.random() * 400));
   }

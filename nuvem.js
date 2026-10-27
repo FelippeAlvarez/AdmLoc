@@ -64,8 +64,15 @@ const NuvemDropbox = {
     this._expira = Date.now() + (j.expires_in - 120) * 1000;
   },
 
-  async token() {
-    if (this._token && Date.now() < this._expira) return this._token;
+  // Uma única renovação do acesso por vez: os pedidos simultâneos (painel, relatórios) aguardam a mesma
+  _renovando: null,
+  token() {
+    if (this._token && Date.now() < this._expira) return Promise.resolve(this._token);
+    if (!this._renovando) this._renovando = this._renovar().finally(() => { this._renovando = null; });
+    return this._renovando;
+  },
+
+  async _renovar() {
     const r = await buscarNuvem('https://api.dropboxapi.com/oauth2/token', {
       method: 'POST',
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: localStorage.getItem('cl-dbx-refresh') || '', client_id: chavesNuvem().dropbox }),
@@ -81,6 +88,22 @@ const NuvemDropbox = {
   },
 
   caminho(c) { return this.pasta.replace(/\/+$/, '') + '/' + c; },
+
+  // Nomes dos arquivos de uma subpasta (ex.: 'calculos'); pasta inexistente: lista vazia
+  async listar(sub) {
+    const nomes = [];
+    let url = 'https://api.dropboxapi.com/2/files/list_folder', corpo = { path: this.caminho(sub), recursive: false };
+    for (;;) {
+      const r = await buscarNuvem(url, { method: 'POST', headers: { Authorization: 'Bearer ' + await this.token(), 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      if (r.status === 409) return nomes;
+      if (!r.ok) throw new Error(`Dropbox: erro ${r.status} ao listar ${sub}.`);
+      const j = await r.json();
+      for (const e of j.entries || []) if (e['.tag'] === 'file') nomes.push(e.name);
+      if (!j.has_more) return nomes;
+      url = 'https://api.dropboxapi.com/2/files/list_folder/continue';
+      corpo = { cursor: j.cursor };
+    }
+  },
 
   // Confere a pasta dos dados; se ainda não existir (primeira conexão), cria
   async verificarPasta(pasta) {

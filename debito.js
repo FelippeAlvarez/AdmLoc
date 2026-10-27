@@ -20,9 +20,21 @@ const calcsVazio = cid => ({ contratoId: cid, rev: 0, amortizacoes: [], calculos
 // validade (ms): reaproveita o que foi lido há menos tempo que isso (painel e relatórios leem todos os contratos);
 // as telas de cálculo e de acordos sempre releem (validade 0)
 const calcsLidosEm = {};
+let listaCalculos = null; // { em, nomes: Promise<Set> } — lista da pasta "calculos" no Dropbox (vale 2 minutos)
+function calculosExistentes() {
+  if (!listaCalculos || Date.now() - listaCalculos.em > 120000) {
+    listaCalculos = { em: Date.now(), nomes: NuvemDropbox.listar('calculos').then(l => new Set(l)).catch(e => { listaCalculos = null; throw e; }) };
+  }
+  return listaCalculos.nomes;
+}
 async function carregarCalculos(cid, validade = 0) {
   if (validade && D.calcs[cid] && Date.now() - (calcsLidosEm[cid] || 0) < validade) return D.calcs[cid];
-  const a = await lerJSON(`calculos/${cid}.json`, null);
+  // No Dropbox, uma consulta à pasta "calculos" evita um pedido por contrato sem cálculo (a maioria)
+  let a = null;
+  if (Armaz.modo === 'dropbox' && validade) {
+    const existentes = await calculosExistentes();
+    if (existentes.has(`${cid}.json`)) a = await lerJSON(`calculos/${cid}.json`, null);
+  } else a = await lerJSON(`calculos/${cid}.json`, null);
   D.calcs[cid] = { ...calcsVazio(cid), ...(a || {}) };
   calcsLidosEm[cid] = Date.now();
   return D.calcs[cid];
@@ -43,6 +55,8 @@ async function gravarCalculos(cid, mudar) {
     atual.atualizadoPor = usuario();
     await Armaz.gravar(`calculos/${cid}.json`, JSON.stringify(atual, null, 1));
     D.calcs[cid] = atual;
+    calcsLidosEm[cid] = Date.now();
+    listaCalculos = null; // a pasta "calculos" pode ter ganhado um arquivo
   });
 }
 
