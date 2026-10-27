@@ -29,7 +29,7 @@ const TIPOS_JUROS = {
   nenhum: 'Sem juros',
 };
 const GRUPOS = {
-  rubrica: 'Condenação / débito principal', custas: 'Custas e despesas', honorarios: 'Honorários advocatícios sucumbenciais',
+  rubrica: 'Aluguéis, encargos e outros débitos', custas: 'Custas e despesas', honorarios: 'Honorários advocatícios sucumbenciais',
   multa: 'Multas processuais', art523: 'Art. 523, § 1º, do CPC',
 };
 const ORDEM_GRUPOS = ['rubrica', 'multa', 'custas', 'honorarios', 'art523'];
@@ -193,7 +193,7 @@ function parcelasDosItens(c, ctx) {
   const lista = [];
   for (const it of c.rubricas || []) {
     if (!(Number(it.valor) > 0)) continue;
-    lista.push(novaParcela({ itemId: it.id, grupo: 'rubrica', rotulo: it.descricao || 'Rubrica', P0: Number(it.valor),
+    lista.push(novaParcela({ itemId: it.id, grupo: 'rubrica', rotulo: it.descricao || 'Rubrica', P0: Number(it.valor), data: it.data || '',
       corrDesde: it.corrDesde || '', jurosDesde: it.jurosDesde || '', regimes: regimesDoItem(it, c), multaPct: it.multa }));
   }
   // Séries mensais (aluguéis, cotas, alimentos…): cada mês é uma verba, com correção desde o próprio vencimento e

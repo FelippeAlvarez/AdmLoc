@@ -21,8 +21,8 @@ function pdfDebito(ct, r, calc) {
   const P = novoDocumento(true);
   P.cab();
   const judicial = calc.tipo === 'judicial';
-  tituloPDF(P, judicial ? 'Demonstrativo discriminado e atualizado do crédito' : 'Demonstrativo de débito',
-    [...partesDebito(ct, calc).map((t, i) => [t, i ? 9 : 10, i ? 'normal' : 'bold']), [`Atualizado até ${fmtData(r.dataCalc)}${judicial ? ' (art. 524 do CPC)' : ''}`, 9, 'normal', COR_SUAVE]]);
+  tituloPDF(P, tituloDebito(calc),
+    [...partesDebito(ct, calc).map((t, i) => [t, i ? 9 : 10, i ? 'normal' : 'bold']), [r.finalidade === 'purga' ? `Valores para depósito judicial em ${fmtData(r.dataCalc)}` : `Atualizado até ${fmtData(r.dataCalc)}${judicial && r.finalidade !== 'inicial' ? ' (art. 524 do CPC)' : ''}`, 9, 'normal', COR_SUAVE]]);
   paragrafoPDF(P, criteriosTexto(r), 8.5);
   P.y += 3;
   const cols = [{ t: 'Item', w: 52 }, { t: 'Data', w: 16, nw: true }, { t: 'Valor original', w: 18, a: 'r' }, { t: 'Fator de correção', w: 16, a: 'r' }, { t: 'Principal corrigido', w: 19, a: 'r' },
@@ -45,10 +45,10 @@ function pdfDebito(ct, r, calc) {
   }
   resumoPDF(P, [
     ...r.grupos.map(g => [g.nome, g.total]),
-    ...(r.honContr ? [[`Honorários advocatícios contratuais (${fmtPct(r.pctContr)}%)`, r.honContr]] : []),
+    ...(r.honContr ? [[`${rotuloHon(r)} (${fmtPct(r.pctContr)}%)`, r.honContr]] : []),
     [`Total do débito em ${fmtData(r.dataCalc)}`, r.total, 'f'],
   ], 140);
-  [...notasCalculo(r), NOTA_METODO].forEach(n => { paragrafoPDF(P, n, 7.5, 'normal', COR_SUAVE); P.y += 1; });
+  [...notasDebito(r), NOTA_METODO].forEach(n => { paragrafoPDF(P, n, 7.5, 'normal', COR_SUAVE); P.y += 1; });
   rodapePDF(P);
   return { doc: P.doc, nome: nomeArquivo('debito', ct.codigo, r.dataCalc) + '.pdf' };
 }
@@ -97,14 +97,14 @@ function formulaFatorDeb(indice, x, DATA, ult) {
 function xlsxDebito(ct, r, calc) {
   const k = r.c.crit;
   // Fórmulas só no caso simples: juros ao mês simples, sem pagamentos e sem itens judiciais (honorários, multas, art. 523)
-  const simples = k.juros === 'mensal' && !k.capitalizar && !k.lei14905 && !r.amort.length && r.grupos.every(g => g.grupo === 'rubrica' || g.grupo === 'custas');
+  const simples = r.finalidade !== 'purga' && k.juros === 'mensal' && !k.capitalizar && !k.lei14905 && !r.amort.length && r.grupos.every(g => g.grupo === 'rubrica' || g.grupo === 'custas');
   const LARG = [12, 34, 12, 14, 12, 14, 8, 13, 9, 13, 15];
-  const L = [...cabecalhoXLSX(), [{ v: calc.tipo === 'judicial' ? 'Demonstrativo discriminado e atualizado do crédito' : 'Demonstrativo de débito', s: 'tit' }], ...partesDebito(ct, calc).map(t => [t]), null];
+  const L = [...cabecalhoXLSX(), [{ v: tituloDebito(calc), s: 'tit' }], ...partesDebito(ct, calc).map(t => [t]), null];
   const param = (rot, val) => { L.push([{ v: rot, s: 'b' }, null, null, val]); return '$D$' + L.length; };
   const DATA = param('Data do cálculo', { v: r.dataCalc, s: 'd' });
   param('Critérios', criteriosTexto(r).replace(/^Critérios: /, ''));
   const JUROS = simples ? param('Juros de mora ao mês (pro rata die)', { v: (Number(k.taxa) || 0) / 100, s: 'p' }) : null;
-  const HON = r.pctContr ? param('Honorários advocatícios contratuais', { v: r.pctContr / 100, s: 'p' }) : null;
+  const HON = r.pctContr ? param(rotuloHon(r), { v: r.pctContr / 100, s: 'p' }) : null;
   const idx = simples && k.indice !== 'Nenhum' ? folhaIndicesDebito(k.indice, !!D.config.moratorios?.ignorarNegativos) : null;
   const fator = x => formulaFatorDeb(k.indice, x, DATA, idx?.ult);
   if (!simples) L.push(['Valores calculados pelo aplicativo (critérios com pagamentos abatidos, taxa legal, SELIC, capitalização ou itens judiciais não são reproduzidos em fórmulas).']);
@@ -156,10 +156,10 @@ function xlsxDebito(ct, r, calc) {
   const sub = { f: totais.length ? totais.join('+') : '0', v: r.subtotal, s: 'mt' };
   L.push([{ v: 'Subtotal do débito', s: 'bt' }, null, null, null, null, null, null, null, null, null, sub]);
   const nSub = L.length;
-  if (HON) L.push([{ v: 'Honorários advocatícios contratuais', s: 'bt' }, null, null, null, null, null, null, null, null, null, { f: `ROUND(K${nSub}*${HON},2)`, v: r.honContr, s: 'mt' }]);
+  if (HON) L.push([{ v: rotuloHon(r), s: 'bt' }, null, null, null, null, null, null, null, null, null, { f: `ROUND(${r.baseHon !== undefined && totais[0] ? totais[0] : 'K' + nSub}*${HON},2)`, v: r.honContr, s: 'mt' }]);
   L.push([{ v: `Total do débito`, s: 'bt' }, null, null, null, null, null, null, null, null, null, { f: HON ? `K${nSub}+K${nSub + 1}` : `K${nSub}`, v: r.total, s: 'mt' }]);
   L.push(null);
-  [...notasCalculo(r), NOTA_METODO].forEach(n => L.push([n]));
+  [...notasDebito(r), NOTA_METODO].forEach(n => L.push([n]));
   const folhas = [{ nome: 'Débito', linhas: L, larguras: LARG }];
   if (idx) folhas.push(idx);
   return gerarXLSX(folhas);
