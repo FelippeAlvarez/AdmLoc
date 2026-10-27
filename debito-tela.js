@@ -61,6 +61,7 @@ async function telaDebito(cid, calcId) {
     `<a class="voltar" href="#/contrato/${cid}">&larr; ${esc(rotuloContrato(ct))}</a>`);
 
   function render() {
+    const emAcordo = mesesEmAcordo(cid);
     const judicial = calc.tipo === 'judicial', purga = ehPurga(calc), k = calc.crit, meses = mesesEmAberto(ct, calc.dataCalc, purga), fora = new Set(calc.fora || []);
     const a523 = calc.art523 || {};
     $('#conteudo').innerHTML = cab + `<div id="telaDeb">
@@ -96,7 +97,7 @@ async function telaDebito(cid, calcId) {
     <section class="cartao">
       <h2>Débitos</h2>
       ${meses.length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Incluir</th><th>Referência</th><th>Vencimento</th><th class="num">Valor devido</th><th>Situação</th></tr></thead><tbody>
-        ${meses.map(m => `<tr><td><input type="checkbox" data-mes="${m.ym}"${fora.has(m.ym) ? '' : ' checked'} aria-label="Incluir ${mesNum(m.ym)}"></td><td>${nomeMes(m.ym)}</td><td>${fmtData(m.venc)}</td><td class="num">${fmtNum(m.devido)}</td>
+        ${meses.map(m => emAcordo.has(m.ym) ? `<tr><td></td><td>${nomeMes(m.ym)}</td><td>${fmtData(m.venc)}</td><td class="num">${fmtNum(m.devido)}</td><td>Incluído em acordo (fora deste cálculo)</td></tr>` : `<tr><td><input type="checkbox" data-mes="${m.ym}"${fora.has(m.ym) ? '' : ' checked'} aria-label="Incluir ${mesNum(m.ym)}"></td><td>${nomeMes(m.ym)}</td><td>${fmtData(m.venc)}</td><td class="num">${fmtNum(m.devido)}</td>
           <td>${m.sit === 'parcial' ? `Pago em parte: ${fmtMoeda(m.pagoParcial / 100)}${m.mes.recebidoEm ? ' em ' + fmtData(m.mes.recebidoEm) : ''} (abatido como pagamento)` : m.sit === 'projetado' ? 'A vencer até o depósito (valor do contrato)' : m.venc >= calc.dataCalc ? 'Vence até o depósito' : 'Não pago'}</td></tr>`).join('')}
       </tbody></table></div>` : `<p class="vazio">Nenhum mês vencido e não pago até ${fmtData(calc.dataCalc)}.</p>`}
       <h3 class="sec">Outros débitos</h3>
@@ -153,7 +154,7 @@ async function telaDebito(cid, calcId) {
     <section class="cartao" id="resDebito"></section>
     <div class="barra-salvar"><span id="estadoSalvar" class="dica">${sujo ? 'Alterações não salvas' : ''}</span>
       ${novo ? '' : '<button class="bt perigo" id="btExcluirCalc">Excluir este cálculo</button>'}
-      <button class="bt" id="btSalvarComo">Salvar como novo cálculo</button><button class="bt primario" id="btSalvarCalc">Salvar</button></div></div>`;
+      ${novo ? '' : `<a class="bt" href="#/contrato/${cid}/acordo/novo?calc=${calc.id}">Simular acordo</a>`}<button class="bt" id="btSalvarComo">Salvar como novo cálculo</button><button class="bt primario" id="btSalvarCalc">Salvar</button></div></div>`;
     ligar();
     recalcular();
   }

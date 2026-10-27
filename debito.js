@@ -15,7 +15,7 @@
 */
 
 /* ================= Dados ================= */
-const calcsVazio = cid => ({ contratoId: cid, rev: 0, amortizacoes: [], calculos: {} });
+const calcsVazio = cid => ({ contratoId: cid, rev: 0, amortizacoes: [], calculos: {}, acordos: {} });
 
 async function carregarCalculos(cid) {
   const a = await lerJSON(`calculos/${cid}.json`, null);
@@ -96,10 +96,12 @@ const nomeFormaAmort = { pagamento: 'Pagamento', deposito: 'Depósito judicial',
   cada vencimento, multa contratual), os outros débitos viram rubricas e os pagamentos (parciais dos meses e os
   registrados no cálculo) viram amortizações.
 */
-function entradaMotor(ct, calc, data) {
+function entradaMotor(ct, calc, data, acordoId) {
   const crit = calc.crit || critDoContrato(ct), fora = new Set(calc.fora || []);
   const purga = ehPurga(calc);
-  const meses = mesesEmAberto(ct, data, purga).filter(m => !fora.has(m.ym));
+  // Meses incluídos em acordos (em andamento ou quitados) ficam de fora, salvo os do próprio acordo em análise
+  const emAcordo = mesesEmAcordo(ct.id), doAcordo = new Set(D.calcs?.[ct.id]?.acordos?.[acordoId]?.meses || []);
+  const meses = mesesEmAberto(ct, data, purga).filter(m => !fora.has(m.ym) && (!emAcordo.has(m.ym) || doAcordo.has(m.ym)));
   const amort = [];
   for (const m of meses) {
     if (m.sit !== 'parcial' || !m.pagoParcial) continue;
@@ -135,8 +137,8 @@ function entradaMotor(ct, calc, data) {
   };
 }
 
-function calcularContrato(ct, calc, data) {
-  const r = calcular(entradaMotor(ct, calc, data), data);
+function calcularContrato(ct, calc, data, acordoId) {
+  const r = calcular(entradaMotor(ct, calc, data, acordoId), data);
   r.finalidade = calc.tipo === 'judicial' ? calc.finalidade || 'geral' : '';
   if (ehPurga(calc)) {
     // Art. 62, II, "d": honorários do advogado do locador sobre o montante devido (aluguéis, acessórios, multa e juros)

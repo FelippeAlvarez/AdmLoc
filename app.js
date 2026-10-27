@@ -347,6 +347,16 @@ function recebimentosLancados(ct, ext, exceto) {
       desc: `Recebido de débito em atraso${a.obs ? ' (' + a.obs + ')' : ''}: pago em ${fmtData(a.data)}${p.data !== a.data ? ', disponível em ' + fmtData(p.data) : ''}`,
       r: { principal: v, encargos: 0, recebido: v, locacao: v, base: taxa ? v : 0, taxa } });
   }
+  // Pagamentos de acordos, na data indicada pelo usuário
+  for (const x of recebimentosDeAcordos(ct)) {
+    const v = cent(x.valor);
+    if (!v) continue;
+    const taxa = x.taxa ? Math.round(v * (Number(ct.taxaAdm) || 0) / 100) : 0;
+    const lanc = x.data.slice(0, 7);
+    (mapa[lanc] = mapa[lanc] || []).push({ ym: lanc, cobranca: true, recebidoEm: x.e.data, disponivelEm: x.data,
+      desc: `Recebido de acordo (${x.a.nome || 'acordo'}, ${descEvento(x.e).toLowerCase()}): pago em ${fmtData(x.e.data)}${x.data !== x.e.data ? ', disponível em ' + fmtData(x.data) : ''}`,
+      r: { principal: v, encargos: 0, recebido: v, locacao: v, base: taxa ? v : 0, taxa } });
+  }
   return mapa;
 }
 
@@ -625,6 +635,8 @@ async function rotear(recarregar) {
     if ((m = h.match(/^#\/(locadores|locatarios|imoveis|contratos)\/([\w-]+)$/))) return telaForm(m[1], m[2]);
     if ((m = h.match(/^#\/contrato\/([\w-]+)$/))) return await telaContrato(m[1]);
     if ((m = h.match(/^#\/contrato\/([\w-]+)\/debito(?:\?c=([\w-]+))?$/))) return await telaDebito(m[1], m[2]);
+    if ((m = h.match(/^#\/contrato\/([\w-]+)\/acordos$/))) return await telaAcordos(m[1]);
+    if ((m = h.match(/^#\/contrato\/([\w-]+)\/acordo\/([\w-]+)(?:\?calc=([\w-]+))?$/))) return await telaAcordo(m[1], m[2], m[3]);
     if (h === '#/vigentes') return telaVigentes();
     if (h.startsWith('#/inadimplencia')) return await telaInadimplencia(h);
     if ((m = h.match(/^#\/contrato\/([\w-]+)\/(\d{4}-\d{2})$/))) return await telaMes(m[1], m[2]);
@@ -888,7 +900,7 @@ async function telaContrato(cid) {
   $('#conteudo').innerHTML = cabecalho(esc(rotuloContrato(ct)) + (ct.status === 'encerrado' ? ' <span class="chip neutro">Encerrado</span>' : ''),
     esc(descImovel(D.imoveis[ct.imovelId])),
     `<a class="bt" href="#/contratos/${cid}">Editar contrato</a>
-     <a class="bt" href="#/contrato/${cid}/debito">Cálculo do débito</a>
+     <a class="bt" href="#/contrato/${cid}/debito">Cálculo do débito</a><a class="bt" href="#/contrato/${cid}/acordos">Acordos</a>
      <a class="bt" href="#/relatorios?tipo=contrato&id=${cid}&de=${cad[0]?.ym || atual}&ate=${ultimo?.ym || atual}">Relatório PDF</a>`,
     '<a class="voltar" href="#/contratos">&larr; Contratos</a>') + `
   <div class="kpis">

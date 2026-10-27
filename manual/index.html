@@ -447,6 +447,15 @@ details p { margin: 8px 0 0; }
       <li><span class="botao">Visualizar PDF</span> / <span class="botao">Salvar PDF</span>: demonstrativo com credor, devedores (locatário e fiadores), critérios, cada item com fator de correção, juros e multa, os pagamentos abatidos e o total. No judicial, sai como demonstrativo discriminado e atualizado do crédito (art. 524 do CPC).</li>
       <li><span class="botao">Salvar planilha Excel</span>: sem pagamentos e com juros ao mês simples, a planilha sai com fórmulas e a folha "Índices": mudando a data, os percentuais ou incluindo meses no Excel, tudo é recalculado. Nos demais casos, sai com os valores calculados pelo aplicativo.</li>
     </ul>
+    <h3>Acordos de pagamento</h3>
+    <p>Na tela do contrato, <span class="botao">Acordos</span> (ou <span class="botao">Simular acordo</span> num cálculo salvo).</p>
+    <ol class="passos">
+      <li><b>Proposta</b>: escolha o débito (um cálculo salvo ou o débito atual pelos critérios do contrato), a data, o devedor (locatário ou fiador), o desconto (sobre o total ou por componente), a entrada e o parcelamento: juros ao mês (Tabela Price), data da 1ª parcela, número de parcelas ou valor da parcela. Defina também a correção, a multa e os juros da parcela paga em atraso.</li>
+      <li>O resultado mostra a composição do débito, o valor negociado, a tabela das parcelas e o rateio de cada pagamento entre o locador e os honorários advocatícios. Gere o PDF ou a planilha da proposta.</li>
+      <li><span class="botao">Acordo aceito: iniciar acompanhamento</span>: o débito e as parcelas ficam fixados, e os meses incluídos saem da Inadimplência e dos novos cálculos do débito.</li>
+      <li><b>Acompanhamento</b>: <span class="botao">Registrar pagamento</span> em cada parcela (o app calcula correção, juros e multa se paga em atraso), <span class="botao">Amortização antecipada</span> (reduz o prazo ou a parcela), <span class="botao">Quitar o acordo</span>, <span class="botao">Descumprimento</span> (vencimento antecipado do saldo ou perda do desconto) e <span class="botao">Desfazer o último</span>.</li>
+      <li><b>Prestação de contas</b>: em cada pagamento, marque <b>Lançar na prestação de contas do locador</b> e informe a data em que o valor ficou disponível (ex.: depósito judicial: data do levantamento). O valor sugerido é a parte do locador, sem os honorários; a taxa de administração incide, salvo se desmarcada.</li>
+    </ol>
     <h3>Relatório de inadimplência</h3>
     <figure><img src="img/inadimplencia.jpg" alt="Relatório de inadimplência agrupado por locatário com totais" loading="lazy">
       <figcaption>Todos os débitos vencidos até a data escolhida. Filtre por locatário, contrato ou cliente e agrupe como preferir. Clique numa linha para abrir o mês.</figcaption></figure>
