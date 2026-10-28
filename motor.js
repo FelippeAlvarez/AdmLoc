@@ -315,7 +315,16 @@ function distribuir(lista, X, d, imputacao, ctx, reg) {
 
 function emOrdem(lista, X, d, imputacao, ctx, reg) {
   const ord = [...lista].sort((a, b) => comparar(a.data, b.data) || ORDEM_GRUPOS.indexOf(a.grupo) - ORDEM_GRUPOS.indexOf(b.grupo));
-  for (const u of ord) { if (X <= 1e-9) break; X = imputar(u, X, d, imputacao, ctx, reg); }
+  // Itens da mesma data e do mesmo grupo (ex.: aluguel, condomínio e IPTU do mesmo mês) recebem o pagamento
+  // proporcionalmente, como se fossem um só débito
+  for (let i = 0; i < ord.length && X > 1e-9;) {
+    let j = i;
+    while (j < ord.length && ord[j].data === ord[i].data && ord[j].grupo === ord[i].grupo) j++;
+    const bloco = ord.slice(i, j).filter(u => saldoBase(u) > 1e-9);
+    if (bloco.length > 1) X = distribuir(bloco, X, d, imputacao, ctx, reg);
+    else if (bloco.length) X = imputar(bloco[0], X, d, imputacao, ctx, reg);
+    i = j;
+  }
   return X;
 }
 
@@ -369,7 +378,7 @@ function calcular(c, dataCalc) {
     }
     else {
       const alvo = dest.startsWith('grupo:') ? vivos.filter(u => u.grupo === dest.slice(6))
-        : dest.startsWith('serie:') ? vivos.filter(u => u.serie === dest.slice(6)) : vivos.filter(u => u.itemId === dest);
+        : dest.startsWith('serie:') ? vivos.filter(u => u.serie === dest.slice(6)) : vivos.filter(u => u.itemId === dest || String(u.itemId).startsWith(dest + '|')); // mês com as rubricas em separado: "AAAA-MM|rubrica"
       X = distribuir(alvo, X, d, a.imputacao, ctx, reg);
       if (X > 0.005) X = emOrdem(vivos.filter(u => saldoBase(u) > 1e-9), X, d, a.imputacao, ctx, reg);
     }

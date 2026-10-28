@@ -58,7 +58,8 @@ function debitoAcordo(ct, a, data = a.data) {
   }
   comp.honorarios += r.honContr || 0;
   for (const k in comp) comp[k] = r2(comp[k]);
-  const meses = r.itens.filter(it => it.serie === 'alugueis' || /^\d{4}-\d{2}$/.test(it.itemId)).map(it => it.itemId);
+  // Meses do débito: itens "AAAA-MM" (aglutinado) ou "AAAA-MM|rubrica" (rubricas em separado)
+  const meses = [...new Set(r.itens.map(it => (String(it.itemId).match(/^(\d{4}-\d{2})(?:\||$)/) || [])[1]).filter(Boolean))];
   return { data, comp, total: r2(Object.values(comp).reduce((s, v) => s + v, 0)), meses, calcNome: calc.nome || 'Débito pelos critérios do contrato', indice: calc.crit?.indice || paramsMora(ct).indice, r };
 }
 

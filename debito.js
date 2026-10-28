@@ -108,6 +108,41 @@ const FINALIDADES = {
 };
 const ehPurga = calc => calc.tipo === 'judicial' && calc.finalidade === 'purga';
 
+/*
+  Rubricas cobradas do locatário num mês (centavos), somadas por nome. Os descontos abatem as rubricas de locação;
+  os reembolsos, as demais; o total confere com o devido do mês. Meses ainda não lançados: rubricas do contrato.
+*/
+function rubricasDoMes(m, ct) {
+  const linhas = (m.mes?.linhas?.length ? m.mes.linhas : linhasDoContrato(ct)).filter(l => cent(l.cobrado) > 0);
+  const mapa = new Map();
+  for (const l of linhas) {
+    const nome = String(l.rubrica || 'Outros').trim() || 'Outros';
+    const chave = nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'outros';
+    const x = mapa.get(chave) || { chave, nome, locacao: false, v: 0 };
+    x.v += cent(l.cobrado);
+    x.locacao = x.locacao || !!l.locacao;
+    mapa.set(chave, x);
+  }
+  const lista = [...mapa.values()];
+  let desc = 0, reemb = 0;
+  for (const a of m.mes?.ajustes || []) { if (a.tipo === 'reembolso') reemb += cent(a.valor); else desc += cent(a.valor); }
+  const abater = (alvo, x) => { for (const r of alvo) { const t = Math.min(r.v, x); r.v -= t; x -= t; } return x; };
+  let sobra = abater(lista.filter(r => r.locacao), desc);
+  sobra = abater(lista.filter(r => !r.locacao), sobra + reemb);
+  abater(lista, sobra);
+  return lista.filter(r => r.v > 0);
+}
+
+// Totais por rubrica (cálculo com as rubricas em separado)
+function resumoRubricas(r) {
+  const series = (r.c.series || []).filter(s => String(s.id).startsWith('rub:'));
+  return series.map(s => {
+    const its = r.itens.filter(it => it.serie === s.id);
+    const soma = k => its.reduce((t, it) => t + cent(it[k]), 0) / 100;
+    return { nome: s.descricao, locacao: s.locacao, meses: its.length, original: soma('original'), principal: soma('principal'), juros: soma('juros'), multa: soma('multa'), total: soma('total') };
+  }).filter(x => x.meses);
+}
+
 const nomeFormaAmort = { pagamento: 'Pagamento', deposito: 'Depósito judicial', levantamento: 'Levantamento (alvará)', acordo: 'Parcela de acordo', outro: 'Outro' };
 
 /*
@@ -133,11 +168,24 @@ function entradaMotor(ct, calc, data, acordoId) {
     const dest = String(a.destino || 'antigas');
     amort.push({ ...a, destino: dest.startsWith('mes:') ? dest.slice(4) : dest });
   }
-  const judicial = calc.tipo === 'judicial';
+  const judicial = calc.tipo === 'judicial', multa = Number(crit.multa) || 0;
+  const vencidos = meses.filter(m => m.venc < data);
+  // Rubricas em separado (aluguel, condomínio, IPTU…): uma série por rubrica; ou tudo aglutinado, uma linha por mês
+  let series;
+  if (calc.porRubrica !== false) {
+    const porChave = new Map();
+    for (const m of vencidos) {
+      for (const rb of rubricasDoMes(m, ct)) {
+        let s = porChave.get(rb.chave);
+        if (!s) porChave.set(rb.chave, s = { id: 'rub:' + rb.chave, descricao: rb.nome, locacao: rb.locacao, crit, multa, juros: 'vencimento', meses: [] });
+        s.meses.push({ id: `${m.ym}|${rb.chave}`, competencia: m.ym, vencimento: m.venc, valor: rb.v / 100 });
+      }
+    }
+    series = [...porChave.values()].sort((a, b) => Number(b.locacao) - Number(a.locacao));
+  } else series = [{ id: 'alugueis', descricao: 'Aluguel e encargos', crit, multa, juros: 'vencimento',
+    meses: vencidos.map(m => ({ id: m.ym, competencia: m.ym, vencimento: m.venc, valor: m.devido })) }];
   return {
-    tipo: judicial ? 'judicial' : 'extrajudicial', crit,
-    series: [{ id: 'alugueis', descricao: 'Aluguel e encargos', crit, multa: Number(crit.multa) || 0, juros: 'vencimento',
-      meses: meses.filter(m => m.venc < data).map(m => ({ id: m.ym, competencia: m.ym, vencimento: m.venc, valor: m.devido })) }],
+    tipo: judicial ? 'judicial' : 'extrajudicial', crit, series,
     rubricas: [
       // Emenda da mora: aluguel que vence na data do depósito entra pelo valor, sem multa nem juros (ainda não está em mora)
       ...meses.filter(m => m.venc >= data).map(m => ({ id: m.ym, descricao: `Aluguel e encargos ${mesNum(m.ym)} (vence em ${fmtData(m.venc)})`,
@@ -169,7 +217,23 @@ function calcularContrato(ct, calc, data, acordoId) {
     r.total = r2(r.subtotal + r.honContr);
     r.projetados = mesesEmAberto(ct, data, true).filter(m => m.sit === 'projetado' && !(calc.fora || []).includes(m.ym)).map(m => m.ym);
   }
+  // Ação de despejo cumulada com cobrança: valor da causa = débito + 12 × a última locação com encargos
+  // (Lei 8.245/91, art. 58, III: doze meses de aluguel; CPC, art. 292, VI: soma dos pedidos cumulados)
+  if (calc.tipo === 'judicial' && calc.finalidade === 'inicial') {
+    const u = ultimaLocacao(ct, data);
+    r.valorCausaDespejo = { debito: r.total, mensal: u.valor, ref: u.ym, doze: r2(u.valor * 12), total: r2(r.total + u.valor * 12) };
+  }
+  r.porRubrica = calc.porRubrica !== false;
   return r;
+}
+
+// Última locação com encargos: valor cobrado no último mês lançado até a data (ou, sem meses, o do contrato)
+function ultimaLocacao(ct, data) {
+  const ext = D.extratos[ct.id];
+  const cad = ext ? calcularExtrato(ct, ext).filter(x => x.ym <= data.slice(0, 7) && x.c.cobrado > 0) : [];
+  const ult = cad[cad.length - 1];
+  if (ult) return { ym: ult.ym, valor: r2(ult.c.cobrado) };
+  return { ym: '', valor: r2(linhasDoContrato(ct).reduce((s, l) => s + (Number(l.cobrado) || 0), 0)) };
 }
 
 const rotuloHon = r => r.finalidade === 'purga' ? 'Honorários do advogado do locador (art. 62, II, d)' : 'Honorários advocatícios contratuais';
@@ -191,7 +255,7 @@ function notasDebito(r) {
 
 // Débito de cada mês em aberto, atualizado pelos critérios do contrato e já abatidos os pagamentos (Inadimplência)
 function debitoPorMes(ct, data) {
-  const r = calcularContrato(ct, { ...novoCalculo(ct), honContr: 0 }, data);
+  const r = calcularContrato(ct, { ...novoCalculo(ct), honContr: 0, porRubrica: false }, data);
   return r.itens.filter(it => it.serie === 'alugueis' && it.total > 0.004).map(it => {
     const m = mesesEmAberto(ct, data).find(x => x.ym === it.itemId);
     const aberto = r2(it.parcelas.reduce((s, u) => s + u.Pb, 0));

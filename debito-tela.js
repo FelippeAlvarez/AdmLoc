@@ -93,10 +93,11 @@ async function telaDebito(cid, calcId) {
         <div class="campo wfull"><label class="inline"><input type="checkbox" data-k="capitalizar"${k.capitalizar ? ' checked' : ''}> Juros capitalizados mensalmente</label>
           <label class="inline"><input type="checkbox" data-k="lei14905"${k.lei14905 ? ' checked' : ''}> A partir de 30/08/2024, IPCA e taxa legal (Lei 14.905/2024)</label></div>
       </div>
-      <p class="dica">Começam iguais aos encargos moratórios do contrato. Juros e multa incidem sobre o valor corrigido; juros desde cada vencimento.</p>
+      <p class="dica">Começam iguais aos encargos moratórios do contrato (no contrato: multa de ${fmtPct(paramsMora(ct).multa)}% e juros de ${fmtPct(paramsMora(ct).juros)}% ao mês). Juros e multa incidem sobre o valor corrigido; juros desde cada vencimento.</p>
+      ${k.juros === 'mensal' && Number(k.taxa) > Number(k.multa) ? `<p class="alerta">Atenção: juros de ${fmtPct(k.taxa)}% ao mês e multa de ${fmtPct(k.multa)}%. Confira se não estão invertidos. Para corrigir só neste cálculo, troque os valores acima; para os próximos, corrija o contrato (Editar contrato › Encargos moratórios) ou o padrão em Administração.</p>` : ''}
     </section>
     <section class="cartao">
-      <h2>Débitos</h2>
+      <div class="cartao-cab"><h2>Débitos</h2><div class="acoes"><label class="inline"><input type="checkbox" data-c="porRubrica"${calc.porRubrica !== false ? ' checked' : ''}> Demonstrar cada rubrica em separado (aluguel, condomínio, IPTU…)</label></div></div>
       ${meses.length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Incluir</th><th>Referência</th><th>Vencimento</th><th class="num">Valor devido</th><th>Situação</th></tr></thead><tbody>
         ${meses.map(m => emAcordo.has(m.ym) ? `<tr><td></td><td>${nomeMes(m.ym)}</td><td>${fmtData(m.venc)}</td><td class="num">${fmtNum(m.devido)}</td><td>Incluído em acordo (fora deste cálculo)</td></tr>` : `<tr><td><input type="checkbox" data-mes="${m.ym}"${fora.has(m.ym) ? '' : ' checked'} aria-label="Incluir ${mesNum(m.ym)}"></td><td>${nomeMes(m.ym)}</td><td>${fmtData(m.venc)}</td><td class="num">${fmtNum(m.devido)}</td>
           <td>${m.sit === 'parcial' ? `Pago em parte: ${fmtMoeda(m.pagoParcial / 100)}${m.mes.recebidoEm ? ' em ' + fmtData(m.mes.recebidoEm) : ''} (abatido como pagamento)` : m.sit === 'projetado' ? 'A vencer até o depósito (valor do contrato)' : m.venc >= calc.dataCalc ? 'Vence até o depósito' : 'Não pago'}</td></tr>`).join('')}
@@ -210,7 +211,7 @@ async function telaDebito(cid, calcId) {
     if (t.id === 'dCalc') return;
     // Datas e listas de escolha só no "change" (o "input" dispara a cada tecla)
     if (e.type === 'input' && (t.type === 'date' || t.tagName === 'SELECT' || t.type === 'checkbox' || t.type === 'radio')) return;
-    if (ds.c) { calc[ds.c] = ds.t === 'pct' ? (t.value.trim() === '' ? 0 : r2(parseValor(t.value))) : t.value; if (ds.c === 'finalidade' && t.value === 'purga' && calc.honPurga === undefined) calc.honPurga = paramsMora(ct).honorarios; }
+    if (ds.c) { calc[ds.c] = t.type === 'checkbox' ? t.checked : ds.t === 'pct' ? (t.value.trim() === '' ? 0 : r2(parseValor(t.value))) : t.value; if (ds.c === 'finalidade' && t.value === 'purga' && calc.honPurga === undefined) calc.honPurga = paramsMora(ct).honorarios; }
     else if (t.name === 'dTipo') { calc.tipo = t.value; if (/^Cobrança (extra)?judicial$/.test(calc.nome)) calc.nome = t.value === 'judicial' ? 'Cobrança judicial' : 'Cobrança extrajudicial'; }
     else if (ds.p) calc.processo = { ...(calc.processo || {}), [ds.p]: t.value };
     else if (ds.k) calc.crit = { ...calc.crit, [ds.k]: t.type === 'checkbox' ? t.checked : ds.t === 'pct' ? (t.value.trim() === '' ? 0 : r2(parseValor(t.value))) : t.value };
@@ -274,6 +275,13 @@ function resultadoHTML(r) {
       ${r.amort.map(x => `<tr><td>${fmtData(x.data)}</td><td>${esc(nomeFormaAmort[x.a.forma] || 'Pagamento')}${x.a.obs ? ': ' + esc(x.a.obs) : ''}</td><td class="num">${fmtNum(x.valor)}</td><td class="num">${fmtNum(x.antes)}</td>
         <td class="num">${fmtNum(x.imputado.reduce((s, l) => s + l.juros + l.multa, 0))}</td><td class="num">${fmtNum(x.imputado.reduce((s, l) => s + l.principal, 0))}</td><td class="num">${fmtNum(x.depois)}</td></tr>`).join('')}
     </tbody></table></div>` : ''}
+    ${(() => { const rr = r.porRubrica ? resumoRubricas(r) : []; return rr.length > 1 ? `<h3 class="sec">Resumo por rubrica</h3><div class="rolagem"><table class="tabela"><thead><tr><th>Rubrica</th><th class="num">Meses</th><th class="num">Valor original</th><th class="num">Principal corrigido</th><th class="num">Juros</th><th class="num">Multa</th><th class="num">Total</th></tr></thead><tbody>
+      ${rr.map(x => `<tr><td>${esc(x.nome)}${x.locacao ? ' <span class="chip neutro">locação</span>' : ''}</td><td class="num">${x.meses}</td><td class="num">${fmtNum(x.original)}</td><td class="num">${fmtNum(x.principal)}</td><td class="num">${fmtNum(x.juros)}</td><td class="num">${fmtNum(x.multa)}</td><td class="num"><b>${fmtNum(x.total)}</b></td></tr>`).join('')}</tbody></table></div>` : ''; })()}
+    ${r.valorCausaDespejo ? `<h3 class="sec">Valor da causa (ação de despejo cumulada com cobrança)</h3>
+      <div class="kpis"><div class="kpi"><span>Débito</span><b>${fmtMoeda(r.valorCausaDespejo.debito)}</b></div>
+        <div class="kpi"><span>12 × última locação com encargos (${fmtMoeda(r.valorCausaDespejo.mensal)}${r.valorCausaDespejo.ref ? ', ' + mesNum(r.valorCausaDespejo.ref) : ''})</span><b>${fmtMoeda(r.valorCausaDespejo.doze)}</b></div>
+        <div class="kpi"><span>Valor da causa</span><b>${fmtMoeda(r.valorCausaDespejo.total)}</b></div></div>
+      <p class="dica">Lei 8.245/91, art. 58, III (doze meses de aluguel), somado ao débito cobrado (CPC, art. 292, VI).</p>` : ''}
     ${notas.map(n => `<p class="alerta">${esc(n)}</p>`).join('')}
     <p class="dica">Critérios: ${esc(descRegimes(regimesDeCrit(r.c.crit)))}${r.c.crit.multa ? `; multa de ${fmtPct(r.c.crit.multa)}% sobre o valor corrigido` : ''}. ${esc(NOTA_METODO)}</p>`;
 }

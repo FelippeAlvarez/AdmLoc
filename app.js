@@ -859,6 +859,8 @@ function telaForm(col, id) {
         if (!dados.inicioControle && dados.inicio) dados.inicioControle = dados.inicio.slice(0, 7);
         if (!dados.mesCorrecao && dados.inicio) dados.mesCorrecao = String(+dados.inicio.slice(5, 7));
         for (const k of ['multaMora', 'jurosMora', 'honorarios']) if (dados[k] != null && (dados[k] < 0 || dados[k] > 100)) throw new Error('Os percentuais dos encargos moratórios devem ficar entre 0 e 100.');
+        const pm = paramsMora(dados);
+        if (pm.juros > pm.multa && !confirm(`Juros de mora de ${fmtPct(pm.juros)}% ao mês e multa de ${fmtPct(pm.multa)}%: os valores não estão invertidos? Salvar mesmo assim?`)) return;
         const dup = Object.values(D.contratos).find(c => c.id !== dados.id && String(c.codigo).trim() === String(dados.codigo).trim());
         if (dup && !confirm(`Já existe outro contrato com o número ${dados.codigo}. Salvar mesmo assim?`)) return;
       }

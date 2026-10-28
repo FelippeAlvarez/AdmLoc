@@ -43,11 +43,20 @@ function pdfDebito(ct, r, calc) {
     r.amort.map(x => ({ c: [fmtData(x.data), (nomeFormaAmort[x.a.forma] || 'Pagamento') + (x.a.obs ? ': ' + x.a.obs : '') + (x.a.imputacao === 'principal' ? ' (imputado no principal)' : ' (imputado primeiro em juros e multa)'),
       fmtNum(x.valor), fmtNum(x.antes), fmtNum(x.imputado.reduce((s, l) => s + l.juros + l.multa, 0)), fmtNum(x.imputado.reduce((s, l) => s + l.principal, 0)), fmtNum(x.depois)] })), 8);
   }
+  const rr = r.porRubrica ? resumoRubricas(r) : [];
+  if (rr.length > 1) {
+    subtituloPDF(P, 'Resumo por rubrica');
+    tabelaPDF(P, [{ t: 'Rubrica', w: 60 }, { t: 'Meses', w: 12, a: 'r' }, { t: 'Valor original', w: 22, a: 'r' }, { t: 'Principal corrigido', w: 22, a: 'r' }, { t: 'Juros', w: 20, a: 'r' }, { t: 'Multa', w: 20, a: 'r' }, { t: 'Total', w: 22, a: 'r' }],
+      rr.map(x => ({ c: [x.nome + (x.locacao ? ' (locação)' : ''), String(x.meses), fmtNum(x.original), fmtNum(x.principal), fmtNum(x.juros), fmtNum(x.multa), fmtNum(x.total)] })), 8);
+  }
   resumoPDF(P, [
     ...r.grupos.map(g => [g.nome, g.total]),
     ...(r.honContr ? [[`${rotuloHon(r)} (${fmtPct(r.pctContr)}%)`, r.honContr]] : []),
     [`Total do débito em ${fmtData(r.dataCalc)}`, r.total, 'f'],
   ], 140);
+  const vc = r.valorCausaDespejo;
+  if (vc) resumoPDF(P, [['Débito (cobrança)', vc.debito], [`12 × última locação com encargos (${fmtNum(vc.mensal)}${vc.ref ? ', ' + mesNum(vc.ref) : ''})`, vc.doze],
+    ['Valor da causa (Lei 8.245/91, art. 58, III; CPC, art. 292, VI)', vc.total, 'f']], 140);
   [...notasDebito(r), NOTA_METODO].forEach(n => { paragrafoPDF(P, n, 7.5, 'normal', COR_SUAVE); P.y += 1; });
   rodapePDF(P);
   return { doc: P.doc, nome: nomeArquivo('debito', ct.codigo, r.dataCalc) + '.pdf' };
@@ -158,6 +167,16 @@ function xlsxDebito(ct, r, calc) {
   const nSub = L.length;
   if (HON) L.push([{ v: rotuloHon(r), s: 'bt' }, null, null, null, null, null, null, null, null, null, { f: `ROUND(${r.baseHon !== undefined && totais[0] ? totais[0] : 'K' + nSub}*${HON},2)`, v: r.honContr, s: 'mt' }]);
   L.push([{ v: `Total do débito`, s: 'bt' }, null, null, null, null, null, null, null, null, null, { f: HON ? `K${nSub}+K${nSub + 1}` : `K${nSub}`, v: r.total, s: 'mt' }]);
+  const nTot = L.length, vc = r.valorCausaDespejo;
+  if (vc) {
+    L.push([{ v: `12 × última locação com encargos (${vc.ref ? mesNum(vc.ref) : 'contrato'})`, s: 'bt' }, null, null, { v: vc.mensal, s: 'm' }, null, null, null, null, null, null, { f: `ROUND(D${L.length + 1}*12,2)`, v: vc.doze, s: 'mt' }]);
+    L.push([{ v: 'Valor da causa (Lei 8.245/91, art. 58, III; CPC, art. 292, VI)', s: 'bt' }, null, null, null, null, null, null, null, null, null, { f: `K${nTot}+K${nTot + 1}`, v: vc.total, s: 'mt' }]);
+  }
+  const rr = r.porRubrica ? resumoRubricas(r) : [];
+  if (rr.length > 1) {
+    L.push(null, [{ v: 'Resumo por rubrica', s: 'b' }], { c: ['Rubrica', '', '', 'Valor original', '', 'Principal corrigido', '', 'Juros', '', 'Multa', 'Total'].map(v => (v ? { v, s: 'cab' } : null)), altura: 30 });
+    rr.forEach(x => L.push([x.nome + (x.locacao ? ' (locação)' : ''), null, null, { v: x.original, s: 'm' }, null, { v: x.principal, s: 'm' }, null, { v: x.juros, s: 'm' }, null, { v: x.multa, s: 'm' }, { v: x.total, s: 'm' }]));
+  }
   L.push(null);
   [...notasDebito(r), NOTA_METODO].forEach(n => L.push([n]));
   const folhas = [{ nome: 'Débito', linhas: L, larguras: LARG }];
