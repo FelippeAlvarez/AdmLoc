@@ -236,6 +236,12 @@ async function salvarMeses(cid, mapa) {
 }
 
 /* ================= Cálculo do extrato ================= */
+// Repasse ao cliente: "programado" (data prevista) ou efetuado (os antigos, sem situação, são efetuados)
+const repasseEfetuado = r => r.status !== 'programado';
+const repassesEfetuados = mes => (mes?.repasses || []).filter(repasseEfetuado);
+// Beneficiários do repasse do contrato: os informados (clientes cadastrados, com %) ou 100% para o locador
+const beneficiariosDe = ct => (ct.beneficiarios || []).filter(b => b.locadorId && Number(b.pct) > 0).length
+  ? ct.beneficiarios.filter(b => b.locadorId && Number(b.pct) > 0) : [{ locadorId: ct.locadorId, pct: 100 }];
 // Situação do pagamento do locatário no mês. Meses lançados antes deste controle contam como pagos.
 const situacaoPagto = mes => mes.pagamento || 'pago';
 
@@ -300,9 +306,11 @@ function calcMes(mes, saldoAnterior, ctx = {}) {
   const recAnt = (ctx.vindos || []).reduce((s, v) => s + v.r.recebido, 0), taxaAnt = (ctx.vindos || []).reduce((s, v) => s + v.r.taxa, 0);
   const recebido = proprio.recebido + recAnt, taxa = proprio.taxa + taxaAnt;
   const liq = recebido - pag, doMes = liq - taxa, ant = cent(saldoAnterior), disp = ant + doMes;
-  let rep = 0;
-  for (const x of mes.repasses || []) rep += cent(x.valor);
+  // Só o repasse efetuado baixa o saldo em conta; o programado fica reservado (não pode ser programado de novo)
+  let rep = 0, prog = 0;
+  for (const x of mes.repasses || []) { if (repasseEfetuado(x)) rep += cent(x.valor); else prog += cent(x.valor); }
   return {
+    programado: f(prog),
     situacao: sit, saldoAnterior: f(ant), cobrado: f(cob), descontos: f(desc), reembolsos: f(reemb), devido: f(devido),
     // Recebido referente a este mês e lançado nele
     principalRecebido: f(proprio.principal), encargosRecebidos: f(proprio.encargos), baseTaxa: f(proprio.base), taxaMes: f(proprio.taxa),
@@ -519,6 +527,8 @@ const CAMPOS = {
     { k: 'baseTaxa', l: 'Incide sobre', t: 'select', semVazio: true, w: 2,
       op: [['locacao', 'Somente os valores recebidos de locação (aluguel)'], ['total', 'Todos os valores recebidos']] },
     { enc: true },
+    { sec: 'Beneficiários do repasse' },
+    { ben: true },
     { sec: 'Encargos moratórios (cálculo de débitos)' },
     { k: 'multaMora', l: 'Multa (%)', t: 'pct', dica: 'Em branco: usa o padrão das Configurações.' },
     { k: 'jurosMora', l: 'Juros de mora (% ao mês)', t: 'pct', dica: 'Calculados pro rata die.' },
@@ -540,6 +550,7 @@ const NOMES = {
 function campoHTML(f, reg) {
   if (f.sec) return `<h3 class="sec">${esc(f.sec)}</h3>`;
   if (f.enc) return encargosHTML(reg.encargos || []);
+  if (f.ben) return beneficiariosHTML(reg);
   const v = reg[f.k];
   const cls = 'campo' + (f.w ? ' w' + f.w : '');
   const a = `id="f_${f.k}" name="${f.k}"${f.req ? ' required' : ''}`;
@@ -641,6 +652,7 @@ async function rotear(recarregar) {
     if (h.startsWith('#/inadimplencia')) return await telaInadimplencia(h);
     if ((m = h.match(/^#\/contrato\/([\w-]+)\/(\d{4}-\d{2})$/))) return await telaMes(m[1], m[2]);
     if (h.startsWith('#/relatorios')) return telaRelatorios(h);
+    if (h.startsWith('#/repasses')) return await telaRepasses(h);
     if (h === '#/conta') return telaConta();
     if (h.startsWith('#/boletos')) return await telaBoletos(h);
     if (h === '#/sobre') return telaSobre();
@@ -683,15 +695,27 @@ async function telaPainel(ym) {
     }
     else if (antes) sit = '<span class="chip neutro">Antes do início</span>';
     else { sit = '<span class="chip pendente">Não gerado</span>'; naoGerados++; }
-    const v = k => x ? fmtNum(x.c[k]) : '';
     const reaj = !antes && reajustePendente(ct, ym);
     if (reaj) reajustes++;
-    return `<tr data-link="#/contrato/${ct.id}/${ym}" data-busca="${esc([ct.codigo, descImovel(D.imoveis[ct.imovelId]), nomeDe('locadores', ct.locadorId), nomeDe('locatarios', ct.locatarioId)].join(' ').toLowerCase())}">
-      <td><b>${esc(ct.codigo)}</b>${reaj ? ` <span class="chip reajuste" title="Reajuste anual de ${mesNum(reaj)} a confirmar">Reajuste</span>` : ''}</td><td title="${esc(descImovel(D.imoveis[ct.imovelId]))}">${esc(imovelCurto(D.imoveis[ct.imovelId]))}</td>
-      <td>${esc(nomeDe('locadores', ct.locadorId))}</td><td>${esc(nomeDe('locatarios', ct.locatarioId))}</td>
-      <td>${sit}</td><td>${pagto}</td><td class="num">${v('devido')}</td><td class="num">${v('recebido')}</td><td class="num">${v('taxa')}</td><td class="num">${v('repassado')}</td>
-      <td class="num"><b>${v('saldoConta')}</b></td></tr>`;
-  }).join('');
+    // Dados da linha (para buscar, filtrar e ordenar na própria tela)
+    const estMes = !x ? (antes ? 'antes' : 'naoGerado') : x.mes.fechado ? 'fechado' : 'aberto';
+    const estPag = !x ? '' : x.c.situacao === 'pago' ? 'pago' : x.c.situacao === 'parcial' ? 'parcial' : x.c.devido > 0 ? 'naoPago' : '';
+    return { ct, x, reaj, sit, pagto, estMes, estPag, contrato: ct.codigo, imovel: imovelCurto(D.imoveis[ct.imovelId]), cliente: nomeDe('locadores', ct.locadorId), locatario: nomeDe('locatarios', ct.locatarioId),
+      venc: x ? vencimentoMes(ct, ym, x.mes) : '', devido: x?.c.devido ?? -1, recebido: x?.c.recebido ?? -1, taxa: x?.c.taxa ?? -1, repassado: x?.c.repassado ?? -1, saldoConta: x?.c.saldoConta ?? -1,
+      busca: [ct.codigo, descImovel(D.imoveis[ct.imovelId]), nomeDe('locadores', ct.locadorId), nomeDe('locatarios', ct.locatarioId)].join(' ').toLowerCase() };
+  });
+  const linhaHTML = l => { const v = k => l.x ? fmtNum(l.x.c[k]) : ''; return `<tr data-link="#/contrato/${l.ct.id}/${ym}">
+      <td><b>${esc(l.contrato)}</b>${l.reaj ? ` <span class="chip reajuste" title="Reajuste anual de ${mesNum(l.reaj)} a confirmar">Reajuste</span>` : ''}</td><td title="${esc(descImovel(D.imoveis[l.ct.imovelId]))}">${esc(l.imovel)}</td>
+      <td>${esc(l.cliente)}</td><td>${esc(l.locatario)}</td><td>${l.venc ? fmtData(l.venc) : ''}</td>
+      <td>${l.sit}</td><td>${l.pagto}</td><td class="num">${v('devido')}</td><td class="num">${v('recebido')}</td><td class="num">${v('taxa')}</td><td class="num">${v('repassado')}</td>
+      <td class="num"><b>${v('saldoConta')}</b></td></tr>`; };
+  const COLS_PAINEL = [['contrato', 'Contrato'], ['imovel', 'Imóvel'], ['cliente', 'Cliente'], ['locatario', 'Locatário'], ['venc', 'Vencimento'], ['estMes', 'Mês'], ['estPag', 'Pagamento'],
+    ['devido', 'Devido', 'n'], ['recebido', 'Recebido', 'n'], ['taxa', 'Taxa adm.', 'n'], ['repassado', 'Repassado', 'n'], ['saldoConta', 'Saldo em conta', 'n']];
+  const FILTROS_PAINEL = [['', 'Todas as situações'], ['naoPago', 'Não pago pelo locatário'], ['parcial', 'Pago em parte'], ['pago', 'Pago'], ['aberto', 'Mês em aberto'], ['fechado', 'Mês fechado'],
+    ['naoGerado', 'Mês não gerado'], ['reajuste', 'Com reajuste a confirmar'], ['saldo', 'Com saldo em conta']];
+  let ordP = { k: 'locatario', d: 1, f: '' };
+  try { Object.assign(ordP, JSON.parse(sessionStorage.getItem('cl-painel') || '{}')); } catch { /* usa o padrão */ }
+  const filtroOk = l => !ordP.f || (ordP.f === 'reajuste' ? !!l.reaj : ordP.f === 'saldo' ? l.saldoConta > 0.004 : l.estMes === ordP.f || l.estPag === ordP.f);
 
   $('#conteudo').innerHTML = cabecalho(`Painel de ${nomeMes(ym)}`, 'Situação do mês em cada contrato ativo',
     `<a class="bt" href="#/painel/${addMes(ym, -1)}" title="Mês anterior">&#9664;</a>
@@ -710,15 +734,36 @@ async function telaPainel(ym) {
   ${reajustes ? `<p class="alerta">${reajustes} contrato${reajustes > 1 ? 's têm' : ' tem'} reajuste anual do aluguel a confirmar neste mês (marcados com <span class="chip reajuste">Reajuste</span>). Abra o mês do contrato para conferir o cálculo e aplicar ou não.</p>` : ''}
   <section class="cartao">
     <div class="cartao-cab"><h2>Contratos</h2><div class="acoes">
-      <input type="search" id="busca" placeholder="Buscar…">
+      <select id="painelFiltro" aria-label="Filtrar por situação">${FILTROS_PAINEL.map(([v, r]) => `<option value="${v}"${v === ordP.f ? ' selected' : ''}>${r}</option>`).join('')}</select>
+      <label class="inline">Ordenar por <select id="painelOrd">${COLS_PAINEL.map(([k, r]) => `<option value="${k}"${k === ordP.k ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
+      <select id="painelDir" aria-label="Ordem"><option value="1"${ordP.d > 0 ? ' selected' : ''}>Crescente</option><option value="-1"${ordP.d < 0 ? ' selected' : ''}>Decrescente</option></select>
+      <input type="search" id="busca" placeholder="Buscar cliente, locatário, imóvel…">
       ${naoGerados ? `<button class="bt primario" id="btGerarTodos">Gerar ${nomeMes(ym)} em ${naoGerados} contrato${naoGerados > 1 ? 's' : ''}</button>` : ''}
     </div></div>
-    ${ativos.length ? `<div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Contrato</th><th>Imóvel</th><th>Cliente</th><th>Locatário</th><th>Mês</th><th>Pagamento</th><th class="num">Devido</th><th class="num">Recebido</th><th class="num">Taxa adm.</th><th class="num">Repassado</th><th class="num">Saldo em conta</th></tr></thead><tbody>${linhas}</tbody></table></div>`
-      : `<p class="vazio">Nenhum contrato ativo. <a href="#/contratos/novo">Cadastrar contrato</a></p>`}
+    ${ativos.length ? '<div class="rolagem" id="painelTab"></div><p class="dica" id="painelQtd"></p>' : `<p class="vazio">Nenhum contrato ativo. <a href="#/contratos/novo">Cadastrar contrato</a></p>`}
   </section>`;
 
+  // Tabela com ordenação (clique no título da coluna ou escolha acima), filtro de situação e busca
+  const desenharTabela = () => {
+    if (!$('#painelTab')) return;
+    const [, , tipo] = COLS_PAINEL.find(c => c[0] === ordP.k) || [];
+    const t = ($('#busca')?.value || '').trim().toLowerCase();
+    const lista = linhas.filter(l => filtroOk(l) && (!t || l.busca.includes(t)))
+      .sort((a, b) => (tipo === 'n' ? a[ordP.k] - b[ordP.k] : comparar(String(a[ordP.k] || ''), String(b[ordP.k] || ''))) * ordP.d || comparar(a.locatario, b.locatario));
+    const th = ([k, r, n]) => `<th class="ordenavel${n ? ' num' : ''}" data-ord="${k}">${r}${ordP.k === k ? (ordP.d > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+    $('#painelTab').innerHTML = `<table class="tabela clicavel"><thead><tr>${COLS_PAINEL.map(th).join('')}</tr></thead><tbody>${lista.map(linhaHTML).join('')}</tbody></table>`;
+    $('#painelQtd').textContent = lista.length === linhas.length ? '' : `${lista.length} de ${linhas.length} contratos.`;
+    $$('#painelTab tr[data-link]').forEach(tr => tr.addEventListener('click', () => { location.hash = tr.dataset.link; }));
+    $$('#painelTab [data-ord]').forEach(h => h.addEventListener('click', () => { ordP.d = ordP.k === h.dataset.ord ? -ordP.d : 1; ordP.k = h.dataset.ord; guardar(); }));
+  };
+  const guardar = () => { try { sessionStorage.setItem('cl-painel', JSON.stringify(ordP)); } catch { /* sem armazenamento */ } $('#painelOrd').value = ordP.k; $('#painelDir').value = String(ordP.d); desenharTabela(); };
+  $('#painelFiltro').addEventListener('change', e => { ordP.f = e.target.value; guardar(); });
+  $('#painelOrd').addEventListener('change', e => { ordP.k = e.target.value; guardar(); });
+  $('#painelDir').addEventListener('change', e => { ordP.d = +e.target.value; guardar(); });
+  $('#busca').addEventListener('input', desenharTabela);
+  desenharTabela();
+
   $('#mesPainel').addEventListener('change', e => { if (ehMes(e.target.value)) location.hash = '#/painel/' + e.target.value; });
-  ligarBusca();
   $('#btGerarTodos')?.addEventListener('click', () => executar(async () => {
     const alvos = ativos.filter((ct, i) => !exts[i].meses[ym] && ym >= (Object.keys(exts[i].meses).sort()[0] || inicioControle(ct)));
     const faltando = alvos.reduce((n, ct) => {
@@ -841,6 +886,7 @@ function telaForm(col, id) {
       $('#encargos .enc-linha:last-child .enc-rub').focus();
     });
     $('#encargos').addEventListener('click', e => { if (e.target.dataset.acao === 'del-enc') e.target.closest('.enc-linha').remove(); });
+    ligarBeneficiarios();
     // Campos da garantia conforme o tipo escolhido
     const verGarantia = () => { const t = form.elements.tipoGarantia.value; $$('[data-gar]').forEach(d => { d.hidden = d.dataset.gar !== t; }); };
     form.elements.tipoGarantia.addEventListener('change', verGarantia);
@@ -853,6 +899,7 @@ function telaForm(col, id) {
       let dados = lerCampos(form, campos, reg);
       if (col === 'contratos') {
         dados.encargos = lerEncargos();
+        dados.beneficiarios = lerBeneficiarios(dados);
         if (dados.encargos.some(x => !x.rubrica)) throw new Error('Informe a rubrica de todos os encargos.');
         if (dados.taxaAdm < 0 || dados.taxaAdm > 100) throw new Error('O percentual da taxa de administração deve ficar entre 0 e 100.');
         if (dados.inicioControle && !ehMes(dados.inicioControle)) throw new Error('Informe o primeiro mês do controle no formato AAAA-MM.');
@@ -1062,6 +1109,7 @@ async function telaMes(cid, ym) {
         <div class="res-l dest"><span>(=) Saldo do mês</span><b id="rMes"></b></div>
         <div class="res-l"><span>Disponível para repasse (saldo anterior + saldo do mês)</span><b id="rDisp"></b></div>
         <div class="res-l"><span>(−) Repassado ao cliente</span><b id="rRep"></b></div>
+        <div class="res-l info" id="linhaProg"><span>Repasse programado (ainda não efetuado; reservado no saldo)</span><b id="rProg"></b></div>
         <div class="res-l final"><span>(=) Saldo em conta</span><b id="rConta"></b></div>
         <div class="res-l alerta-l" id="linhaAberto"><span>Não pago pelo locatário (em aberto)</span><b id="rAberto"></b></div>
       </div>
@@ -1103,6 +1151,8 @@ async function telaMes(cid, ym) {
         <input type="date" data-campo="data" value="${esc(r.data || '')}">
         <input class="num" inputmode="decimal" data-tipo="money" data-campo="valor" placeholder="Valor" value="${r.valor ? fmtNum(r.valor) : ''}">
         <input data-campo="obs" placeholder="Observação (ex.: PIX)" value="${esc(r.obs || '')}">
+        ${beneficiariosDe(ct).length > 1 ? `<select data-campo="beneficiarioId" aria-label="Beneficiário">${beneficiariosDe(ct).map(b => `<option value="${b.locadorId}"${b.locadorId === (r.beneficiarioId || ct.locadorId) ? ' selected' : ''}>${esc(nomeDe('locadores', b.locadorId))} (${fmtPct(b.pct)}%)</option>`).join('')}</select>` : ''}
+        <select data-campo="status" aria-label="Situação do repasse"><option value="efetuado"${repasseEfetuado(r) ? ' selected' : ''}>Efetuado</option><option value="programado"${repasseEfetuado(r) ? '' : ' selected'}>Programado</option></select>
         <button class="bt-x" data-acao="del" title="Remover repasse">&times;</button></div>`).join('')
       : '<p class="vazio">Nenhum repasse neste mês.</p>';
     travar();
@@ -1201,6 +1251,7 @@ async function telaMes(cid, ym) {
     $('#linhaRecAnt').hidden = $('#linhaTaxaAnt').hidden = !k.anteriores.length;
     $('#rRecAntDet').textContent = k.anteriores.length ? ' ' + k.anteriores.map(v => v.cobranca ? `${v.desc}: ${fmtMoeda(v.recebido)}` : `${mesNum(v.ym)}: ${fmtMoeda(v.recebido)} em ${fmtData(v.recebidoEm)}`).join(' · ') : '';
     put('rMes', k.saldoMes); put('rDisp', k.disponivel); put('rRep', k.repassado); put('rConta', k.saldoConta); put('rAberto', k.emAberto);
+    put('rProg', k.programado); $('#linhaProg').hidden = !k.programado;
     $('#linhaEnc').hidden = !k.encargosRecebidos;
     $('#linhaAberto').hidden = !k.emAberto;
     $('#rBase').textContent = 'Base de cálculo: ' + fmtMoeda(k.baseTaxa);
@@ -1320,14 +1371,15 @@ async function telaMes(cid, ym) {
     marcarSujo(); renderRepasses(); atualizarResumo();
   });
   $('#btAddRep').addEventListener('click', () => {
-    ed.repasses.push({ id: novoId(), data: hoje(), valor: 0, obs: '' });
+    ed.repasses.push({ id: novoId(), data: hoje(), valor: 0, obs: '', status: 'efetuado', beneficiarioId: ct.locadorId });
     marcarSujo(); renderRepasses(); atualizarResumo();
     $('#repasses .rep:last-child [data-campo=valor]').focus();
   });
   $('#btRepTotal').addEventListener('click', () => {
     const k = calcMes(ed, saldoAnterior, ctxMes);
-    if (k.saldoConta <= 0) return aviso('Não há saldo disponível para repassar.', 'erro');
-    ed.repasses.push({ id: novoId(), data: hoje(), valor: k.saldoConta, obs: '' });
+    const livre = r2(k.saldoConta - k.programado);
+    if (livre <= 0) return aviso('Não há saldo disponível para repassar (descontados os repasses programados).', 'erro');
+    ed.repasses.push({ id: novoId(), data: hoje(), valor: livre, obs: '', status: 'efetuado', beneficiarioId: ct.locadorId });
     marcarSujo(); renderRepasses(); atualizarResumo();
   });
 

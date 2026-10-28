@@ -262,7 +262,7 @@ function blocoMesPDF(P, x) {
     paragrafoPDF(P, `Reajuste anual aplicado neste mês: ${fmtPct(m.reajuste.pct)}% (${m.reajuste.indice}${m.reajuste.de ? ' acumulado de ' + mesNum(m.reajuste.de) + ' a ' + mesNum(m.reajuste.ate) : ''}).`, 8, 'italic', COR_SUAVE);
     P.y += 2;
   }
-  const reps = (m.repasses || []).map(r => [`(-) Repasse ao cliente em ${fmtData(r.data)}${r.obs ? ' - ' + r.obs : ''}`, r.valor]);
+  const reps = repassesEfetuados(m).map(r => [`(-) Repasse${r.beneficiarioId && r.beneficiarioId !== x.ct?.locadorId ? ' a ' + nomeDe('locadores', r.beneficiarioId) : ' ao cliente'} em ${fmtData(r.data)}${r.obs ? ' - ' + r.obs : ''}`, r.valor]);
   const anteriores = (k.anteriores || []).map(v => v.cobranca ? [`(+) ${v.desc}`, v.recebido] : [`(+) Recebido em ${fmtData(v.recebidoEm)}, referente a ${mesNum(v.ym)} (pagamento em atraso${v.encargos ? `; inclui multa, juros e correção de R$ ${fmtNum(v.encargos)}` : ''})`, v.recebido]);
   resumoPDF(P, [
     ['Saldo anterior (não repassado)', k.saldoAnterior],
@@ -295,7 +295,7 @@ function resumoPeriodoPDF(P, meses, titulo) {
 }
 
 function repassesPeriodoPDF(P, meses) {
-  const reps = meses.flatMap(x => (x.mes.repasses || []).map(r => ({ ...r, ym: x.ym }))).sort((a, b) => comparar(a.data, b.data));
+  const reps = meses.flatMap(x => repassesEfetuados(x.mes).map(r => ({ ...r, ym: x.ym }))).sort((a, b) => comparar(a.data, b.data));
   if (!reps.length) return;
   P.espaco(24);
   subtituloPDF(P, 'Repasses ao cliente no período');

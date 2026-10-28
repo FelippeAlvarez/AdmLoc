@@ -35,7 +35,7 @@ const situacaoImovelTxt = ct => ct ? 'Locado' + (prazoEncerrado(ct) ? ' (prazo e
 const pessoaDoc = (col, id) => { const p = D[col][id]; return p ? p.nome + (p.documento ? ' · ' + p.documento : '') : '—'; };
 const somaC = (lista, k) => lista.reduce((s, x) => s + (x[k] || 0), 0);
 function somarDias(iso, n) { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
-function mesesEntre(de, ate) { const l = []; for (let m = de; m <= ate; m = addMes(m, 1)) l.push(m); return l; }
+function listaMeses(de, ate) { const l = []; for (let m = de; m <= ate; m = addMes(m, 1)) l.push(m); return l; }
 
 async function extratosDe(contratos) {
   const exts = await Promise.all(contratos.map(ct => carregarExtrato(ct.id)));
@@ -275,7 +275,7 @@ const RelTaxa = {
     if (o.agrup === 'mes') {
       cols = [{ t: 'Mês', w: 18, nw: true, xw: 12 }, { t: 'Pagamentos', w: 14, tipo: 'inteiro', xw: 12 }, { t: 'Recebido dos locatários', w: 24, tipo: 'moeda', xw: 18 },
         { t: 'Base da taxa', w: 22, tipo: 'moeda', xw: 16 }, { t: '% médio', w: 14, tipo: 'pct', xw: 10 }, { t: 'Taxa de administração', w: 24, tipo: 'moeda', xw: 18 }];
-      for (const m of mesesEntre(o.de, o.ate)) {
+      for (const m of listaMeses(o.de, o.ate)) {
         const t = tot(lista.filter(x => x[campoMes] === m));
         linhas.push({ c: [mesNum(m), t.n, reais(t.rec), reais(t.base), pct(t), reais(t.taxa)] });
       }
@@ -333,7 +333,7 @@ const RelInforme = {
       for (const { ext } of exts) {
         for (const [ym, mes] of Object.entries(ext.meses)) {
           if (ym.startsWith(ano)) despesas[ym] = (despesas[ym] || 0) + (mes.linhas || []).reduce((s, l) => s + cent(l.pago), 0);
-          for (const r of mes.repasses || []) if ((r.data || '').startsWith(ano)) repasses[r.data.slice(0, 7)] = (repasses[r.data.slice(0, 7)] || 0) + cent(r.valor);
+          for (const r of repassesEfetuados(mes)) if ((r.data || '').startsWith(ano)) repasses[r.data.slice(0, 7)] = (repasses[r.data.slice(0, 7)] || 0) + cent(r.valor);
         }
       }
       const temMov = recs.length || Object.values(despesas).some(Boolean) || Object.values(repasses).some(Boolean);
@@ -437,7 +437,7 @@ const RelRepasses = {
     const reps = [], saldos = [];
     for (const { ct, ext } of await extratosDe(cts)) {
       for (const [ym, mes] of Object.entries(ext.meses)) {
-        for (const r of mes.repasses || []) if (r.data >= ini && r.data <= fim) reps.push({ ct, ym, ...r, v: cent(r.valor) });
+        for (const r of repassesEfetuados(mes)) if (r.data >= ini && r.data <= fim) reps.push({ ct, ym, ...r, v: cent(r.valor) });
       }
       const cad = calcularExtrato(ct, ext);
       const ult = cad[cad.length - 1];

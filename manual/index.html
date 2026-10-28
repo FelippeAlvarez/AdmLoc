@@ -461,6 +461,17 @@ details p { margin: 8px 0 0; }
     <figure><img src="img/inadimplencia.jpg" alt="Relatório de inadimplência agrupado por locatário com totais" loading="lazy">
       <figcaption>Todos os débitos vencidos até a data escolhida. Filtre por locatário, contrato ou cliente e agrupe como preferir. Clique numa linha para abrir o mês.</figcaption></figure>
 
+    <h2 id="repasses">Repasses</h2>
+    <p>No menu, <b>Repasses</b> reúne os saldos de todas as locações num mês, para programar e registrar os repasses sem abrir cada contrato.</p>
+    <ul>
+      <li><b>Filtros</b>: mês, situação (com saldo a repassar, locatário já pagou, programado, repassado, todas), cliente e busca. <b>Por locação</b> mostra saldo anterior, recebido, despesas pagas, taxa de administração, valor a repassar, programado e repassado; <b>Por beneficiário</b> soma tudo o que cada cliente tem a receber, com o detalhe de cada locação e os dados bancários.</li>
+      <li>Marque as locações (ou nenhuma, para todas as listadas) e use <span class="botao">Programar repasse</span> (reserva o valor, sem baixar o saldo), <span class="botao">Registrar repasse efetuado</span>, <span class="botao">Confirmar programados</span> ou <span class="botao">Cancelar programados</span>. O valor sugerido é todo o saldo; pode ser menor (o restante continua como saldo e passa para o mês seguinte).</li>
+      <li>O repasse fica registrado no mês da data do pagamento, no extrato de cada contrato. Mês fechado: o app registra mesmo assim, com aviso.</li>
+      <li><span class="botao">Visualizar prévia (PDF)</span>: uma página por beneficiário, com cada locação, os valores e o total a repassar. <span class="botao">Planilha do lote (Excel)</span>: beneficiário, CPF/CNPJ, banco, agência, conta, PIX e valor, para pagar no banco.</li>
+      <li><b>Vários beneficiários numa locação</b>: no contrato, seção <b>Beneficiários do repasse</b>, escolha os clientes (cadastrados antes em Clientes) e o percentual de cada um (total de 100%).</li>
+    </ul>
+    <p class="dica">No <b>Painel do mês</b>, a tabela pode ser ordenada (clique no título da coluna ou escolha acima) e filtrada por situação (não pago, pago em parte, mês fechado, não gerado, com reajuste, com saldo), além da busca por cliente, locatário ou imóvel.</p>
+
     <h2 id="boletos">Boletos (prévia)</h2>
     <p>Reúne, para cada contrato do mês, os dados que o banco pede para emitir o boleto, cada um com o botão <span class="botao">Copiar</span>. Basta copiar e colar no sistema de boletos do banco.</p>
     <figure><img src="img/boletos.jpg" alt="Prévia de boletos do mês com os dados de cada contrato e botões de copiar" loading="lazy">
