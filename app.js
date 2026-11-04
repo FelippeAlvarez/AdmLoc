@@ -136,6 +136,12 @@ const arquivosDeDados = () => ['config.json', 'indices.json', ...COLECOES.map(c 
 // Cópia diária de segurança de todos os arquivos, feita antes da primeira gravação do dia
 let backupDoDia = null;
 async function copiaDeSeguranca(pasta) {
+  // Dropbox: o próprio Dropbox copia os arquivos e as pastas (um pedido, em vez de baixar e reenviar cada arquivo)
+  if (Armaz.modo === 'dropbox') {
+    const nomes = ['config.json', 'indices.json', ...COLECOES.map(c => c + '.json'), 'usuarios.json', 'extratos/', 'calculos/'];
+    const feito = await NuvemDropbox.copiarParaBackup(pasta, nomes).catch(e => { console.warn('Cópia pelo Dropbox', e); return false; });
+    if (feito) { await Armaz.gravar(`_backups/${pasta}/ok.txt`, new Date().toISOString() + ' ' + usuario()); return; }
+  }
   // No modo servidor, a cópia dos usuários é feita pelo próprio servidor
   for (const a of [...arquivosDeDados(), ...(Armaz.modo === 'servidor' ? [] : ['usuarios.json'])]) {
     const t = await Armaz.ler(a);
@@ -630,7 +636,37 @@ function destacarMenu(h) {
   $$('#menu a').forEach(a => a.classList.toggle('ativo', h.startsWith('#/' + a.dataset.rota)));
 }
 
+// Abre a tela do endereço atual, medindo o tempo e os pedidos à nuvem (Administração › Desempenho)
 async function rotear(recarregar) {
+  const t0 = performance.now(), p0 = Medicao.pedidos;
+  const tela = (location.hash || '#/painel').split('?')[0].replace(/(.\/[^/]+)\/[\w-]{10,}/g, '$1/…');
+  try { return await rotearTela(recarregar); }
+  finally { registrarDesempenho(tela, performance.now() - t0, Medicao.pedidos - p0); }
+}
+
+const DESEMPENHO_CHAVE = 'cl-desempenho';
+function secaoDesempenhoHTML() {
+  let l = [];
+  try { l = JSON.parse(localStorage.getItem(DESEMPENHO_CHAVE) || '[]'); } catch { l = []; }
+  const nomeTela = t => ({ '#/painel': 'Painel', '#/inadimplencia': 'Inadimplência', '#/repasses': 'Repasses', '#/boletos': 'Boletos', '#/relatorios': 'Relatórios', '#/admin': 'Administração', '#/vigentes': 'Contratos vigentes' }[t]
+    || t.replace(/^#\//, '').replace(/\/…/g, '').replace(/\//g, ' › ') || 'Painel');
+  return `<section class="cartao" id="secDesempenho">
+    <div class="cartao-cab"><h2>Desempenho deste aparelho</h2><div class="acoes"><button class="bt pequeno" id="btDesempLimpar">Limpar</button></div></div>
+    <p class="dica">Tempo para abrir as últimas telas neste aparelho e quantos pedidos foram feitos à nuvem. Ajuda a encontrar telas lentas.</p>
+    ${l.length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Quando</th><th>Tela</th><th class="num">Tempo</th><th class="num">Pedidos à nuvem</th></tr></thead><tbody>
+      ${l.map(x => `<tr><td>${new Date(x.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td>${esc(nomeTela(x.tela))}</td><td class="num">${(x.ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s</td><td class="num">${x.pedidos}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="vazio">Ainda sem medições.</p>'}
+  </section>`;
+}
+function registrarDesempenho(tela, ms, pedidos) {
+  try {
+    const l = JSON.parse(localStorage.getItem(DESEMPENHO_CHAVE) || '[]');
+    l.unshift({ tela, ms: Math.round(ms), pedidos, em: new Date().toISOString(), modo: Armaz.modo });
+    localStorage.setItem(DESEMPENHO_CHAVE, JSON.stringify(l.slice(0, 40)));
+  } catch { /* sem armazenamento */ }
+}
+
+async function rotearTela(recarregar) {
   hashAnterior = location.hash;
   if (!Armaz.modo) return telaConexao();
   if (!Auth.usuario) return telaLogin();
@@ -1591,7 +1627,8 @@ function telaConfig() {
     ${dropboxFixo() ? `<p id="contaDbx"></p><p class="dica">Este aparelho está conectado à pasta <b>${esc(pastaDropboxFixa())}</b> do Dropbox da administradora. Todos os aparelhos usam essa mesma pasta. Para incluir o aparelho de alguém da equipe: crie o usuário (acima) e use <b>Gerar convite para outro aparelho</b>; a pessoa abre o link, digita o código e entra com o login dela. Aparelho perdido ou de alguém que saiu da equipe: no site do Dropbox (conta da administradora) → Configurações → Aplicativos conectados, remova o aplicativo; todos os aparelhos precisarão ser conectados de novo.</p>` : ''}
     ${Armaz.modo !== 'servidor' ? '<p class="dica">Neste modo, os usuários e as permissões são controlados pelo aplicativo. Quem tiver acesso direto à pasta (fora do aplicativo) consegue alterar os arquivos; compartilhe a pasta somente com quem deve ter acesso.</p>' : ''}
   </section>
-  ${secaoIndicesHTML()}`;
+  ${secaoIndicesHTML()}
+  ${secaoDesempenhoHTML()}`;
   $$('[data-ir]').forEach(l => l.addEventListener('click', e => { e.preventDefault(); $('#' + l.dataset.ir)?.scrollIntoView({ behavior: 'smooth' }); }));
   ligarUsuarios();
   if (Armaz.modo === 'servidor') ligarServidor();
@@ -1648,6 +1685,7 @@ function telaConfig() {
     telaConfig();
   }));
   ligarIndices();
+  $('#btDesempLimpar')?.addEventListener('click', () => { try { localStorage.removeItem(DESEMPENHO_CHAVE); } catch { /* sem armazenamento */ } telaConfig(); });
   $('#btExportar').addEventListener('click', () => executar(exportarBackup));
   $('#arqImportar').addEventListener('change', e => executar(async () => { if (e.target.files.length) await importarBackup(e.target.files); e.target.value = ''; }));
   if ($('#contaDbx')) NuvemDropbox.conta().then(c => { if (c && $('#contaDbx')) $('#contaDbx').innerHTML = `Conta do Dropbox conectada: <b>${esc(c.nome)}</b>${c.email ? ' (' + esc(c.email) + ')' : ''}${c.equipe ? ' · equipe ' + esc(c.equipe) : ''}`; }).catch(() => {});

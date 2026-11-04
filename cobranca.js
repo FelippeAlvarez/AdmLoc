@@ -360,7 +360,9 @@ async function telaInadimplencia(h) {
   for (const d of itens) { const k = chave(d); if (!grupos.has(k)) grupos.set(k, { rotulo: rotulo(d), itens: [] }); grupos.get(k).itens.push(d); }
   const lista = [...grupos.values()].sort((a, b) => comparar(a.rotulo, b.rotulo));
   lista.forEach(g => g.itens.sort((a, b) => ordemContrato(a.ct, b.ct) || comparar(a.ym, b.ym)));
-  const tot = { valor: somaCent(itens, d => d.valor), encargos: somaCent(itens, d => d.encargos), atualizado: somaCent(itens, d => d.atualizado) };
+  // Encargos discriminados: correção monetária, juros, multa e (se incluídos) honorários advocatícios
+  const COLS_ENC = [['valor', 'Em aberto'], ['correcao', 'Correção monetária'], ['juros', 'Juros de mora'], ['multa', 'Multa'], ...(st.hon ? [['hon', 'Honorários advocatícios']] : []), ['atualizado', 'Atualizado']];
+  const tot = Object.fromEntries([...COLS_ENC.map(([k]) => k), 'encargos'].map(k => [k, somaCent(itens, d => d[k])]));
   const maiorAtraso = itens.reduce((m, d) => Math.max(m, d.e.dias), 0);
   const faltando = [...new Set(itens.flatMap(d => d.e.faltando))].sort();
 
@@ -386,22 +388,26 @@ async function telaInadimplencia(h) {
   </section>
   <div class="kpis">
     <div class="kpi"><span>Em aberto (valor original)</span><b class="${tot.valor ? 'neg' : ''}">${fmtMoeda(tot.valor)}</b></div>
+    <div class="kpi"><span>Correção monetária</span><b>${fmtMoeda(tot.correcao)}</b></div>
+    <div class="kpi"><span>Juros de mora</span><b>${fmtMoeda(tot.juros)}</b></div>
+    <div class="kpi"><span>Multa</span><b>${fmtMoeda(tot.multa)}</b></div>
+    ${st.hon ? `<div class="kpi"><span>Honorários advocatícios</span><b>${fmtMoeda(tot.hon)}</b></div>` : ''}
     <div class="kpi"><span>Atualizado com encargos</span><b class="${tot.atualizado ? 'neg' : ''}">${fmtMoeda(tot.atualizado)}</b></div>
     <div class="kpi"><span>Contratos inadimplentes</span><b>${new Set(itens.map(d => d.ct.id)).size}</b></div>
     <div class="kpi"><span>Locatários inadimplentes</span><b>${new Set(itens.map(d => d.ct.locatarioId)).size}</b></div>
     <div class="kpi"><span>Maior atraso</span><b>${maiorAtraso} dia${maiorAtraso === 1 ? '' : 's'}</b></div>
   </div>
   <section class="cartao">
-    ${itens.length ? `<div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Contrato</th><th>Locatário</th><th>Cliente</th><th>Referência</th><th>Vencimento</th><th class="num">Dias</th><th class="num">Em aberto</th><th class="num">Encargos</th><th class="num">Atualizado</th></tr></thead><tbody>
-      ${lista.map(g => `<tr class="grupo"><td colspan="9">${esc(g.rotulo)}</td></tr>` + g.itens.map(d => `<tr data-link="#/contrato/${d.ct.id}/${d.ym}">
+    ${itens.length ? `<div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Contrato</th><th>Locatário</th><th>Cliente</th><th>Referência</th><th>Vencimento</th><th class="num">Dias</th>${COLS_ENC.map(([, t]) => `<th class="num">${t}</th>`).join('')}</tr></thead><tbody>
+      ${lista.map(g => `<tr class="grupo"><td colspan="${6 + COLS_ENC.length}">${esc(g.rotulo)}</td></tr>` + g.itens.map(d => `<tr data-link="#/contrato/${d.ct.id}/${d.ym}">
         <td>${esc(d.ct.codigo)}</td><td>${esc(nomeDe('locatarios', d.ct.locatarioId))}</td><td>${esc(nomeDe('locadores', d.ct.locadorId))}</td>
         <td>${nomeMes(d.ym)}${d.sit === 'parcial' ? ' <span class="chip aberto">parcial</span>' : ''}</td><td>${fmtData(d.venc)}</td><td class="num">${d.e.dias}</td>
-        <td class="num">${fmtNum(d.valor)}</td><td class="num">${fmtNum(d.encargos)}</td><td class="num"><b>${fmtNum(d.atualizado)}</b></td></tr>`).join('') +
-        `<tr class="subtotal"><td colspan="6">Subtotal (${g.itens.length} mês${g.itens.length > 1 ? 'es' : ''})</td><td class="num">${fmtNum(somaCent(g.itens, d => d.valor))}</td><td class="num">${fmtNum(somaCent(g.itens, d => d.encargos))}</td><td class="num">${fmtNum(somaCent(g.itens, d => d.atualizado))}</td></tr>`).join('')}
-      <tr class="total-geral"><td colspan="6">Total geral</td><td class="num">${fmtNum(tot.valor)}</td><td class="num">${fmtNum(tot.encargos)}</td><td class="num">${fmtNum(tot.atualizado)}</td></tr>
+        ${COLS_ENC.map(([k]) => `<td class="num">${k === 'atualizado' ? '<b>' + fmtNum(d[k]) + '</b>' : fmtNum(d[k])}</td>`).join('')}</tr>`).join('') +
+        `<tr class="subtotal"><td colspan="6">Subtotal (${g.itens.length} ${g.itens.length > 1 ? 'meses' : 'mês'})</td>${COLS_ENC.map(([k]) => `<td class="num">${fmtNum(somaCent(g.itens, d => d[k]))}</td>`).join('')}</tr>`).join('')}
+      <tr class="total-geral"><td colspan="6">Total geral</td>${COLS_ENC.map(([k]) => `<td class="num">${fmtNum(tot[k])}</td>`).join('')}</tr>
     </tbody></table></div>` : '<p class="vazio">Nenhum débito vencido e não pago para a seleção escolhida.</p>'}
     ${faltando.length ? `<p class="alerta">${esc(notaFaltando(faltando))}</p>` : ''}
-    <p class="dica">Encargos: correção monetária, juros e multa, conforme os critérios de cada contrato, já abatidos os pagamentos (pagamentos em parte lançados nos meses e os registrados no Cálculo do débito)${st.hon ? ', mais honorários advocatícios' : ''}. Para o cálculo detalhado de um contrato, use <b>Cálculo do débito</b> na tela do contrato.</p>
+    <p class="dica">Correção monetária, juros de mora e multa conforme os critérios de cada contrato, já abatidos os pagamentos (pagamentos em parte lançados nos meses e os registrados no Cálculo do débito; o pagamento abate primeiro juros e multa, CC, art. 354)${st.hon ? '; honorários advocatícios sobre o débito atualizado, pelo percentual do contrato' : ''}. Para o cálculo detalhado de um contrato, use <b>Cálculo do débito</b> na tela do contrato.</p>
   </section>`;
   ligarBusca();
 
@@ -419,17 +425,18 @@ async function telaInadimplencia(h) {
     : { contrato: () => rotuloContrato(D.contratos[st.id]), locatario: () => 'Locatário: ' + nomeDe('locatarios', st.id), locador: () => 'Cliente: ' + nomeDe('locadores', st.id) }[st.tipo]();
   const exp = () => {
     if (!itens.length) throw new Error('Não há débitos para exportar.');
-    const cols = [{ t: 'Contrato', w: 18, xw: 11 }, { t: 'Locatário', w: 46, xw: 30 }, { t: 'Cliente', w: 40, xw: 28 }, { t: 'Referência', w: 28, xw: 16 }, { t: 'Vencimento', w: 22, xw: 13 },
-      { t: 'Dias', w: 13, tipo: 'inteiro', xw: 8 }, { t: 'Em aberto', w: 26, tipo: 'moeda', xw: 14 }, { t: 'Encargos', w: 26, tipo: 'moeda', xw: 14 }, { t: 'Atualizado', w: 28, tipo: 'moeda', xw: 15 }];
+    const cols = [{ t: 'Contrato', w: 16, xw: 11 }, { t: 'Locatário', w: 40, xw: 30 }, { t: 'Cliente', w: 34, xw: 28 }, { t: 'Referência', w: 22, xw: 16 }, { t: 'Vencimento', w: 20, xw: 13 },
+      { t: 'Dias', w: 11, tipo: 'inteiro', xw: 8 }, ...COLS_ENC.map(([, t]) => ({ t, w: 22, tipo: 'moeda', xw: 14 }))];
+    const vazios = COLS_ENC.map(() => '');
     const linhas = [];
     for (const g of lista) {
-      linhas.push({ c: [g.rotulo, '', '', '', '', '', '', '', ''], grupo: true });
-      g.itens.forEach(d => linhas.push({ c: [d.ct.codigo, nomeDe('locatarios', d.ct.locatarioId), nomeDe('locadores', d.ct.locadorId), mesNum(d.ym) + (d.sit === 'parcial' ? ' (parcial)' : ''), d.venc, d.e.dias, d.valor, d.encargos, d.atualizado] }));
-      linhas.push({ c: ['Subtotal', '', '', '', '', '', somaCent(g.itens, d => d.valor), somaCent(g.itens, d => d.encargos), somaCent(g.itens, d => d.atualizado)], total: true });
+      linhas.push({ c: [g.rotulo, '', '', '', '', '', ...vazios], grupo: true });
+      g.itens.forEach(d => linhas.push({ c: [d.ct.codigo, nomeDe('locatarios', d.ct.locatarioId), nomeDe('locadores', d.ct.locadorId), mesNum(d.ym) + (d.sit === 'parcial' ? ' (parcial)' : ''), d.venc, d.e.dias, ...COLS_ENC.map(([k]) => d[k])] }));
+      linhas.push({ c: ['Subtotal', '', '', '', '', '', ...COLS_ENC.map(([k]) => somaCent(g.itens, d => d[k]))], total: true });
     }
-    linhas.push({ c: ['Total geral', '', '', '', '', '', tot.valor, tot.encargos, tot.atualizado], total: true });
+    linhas.push({ c: ['Total geral', '', '', '', '', '', ...COLS_ENC.map(([k]) => tot[k])], total: true });
     const sub = `${filtroDesc} · posição em ${fmtData(st.data)}`;
-    const notas = [`Encargos: correção monetária, juros de mora pro rata die e multa, conforme os critérios de cada contrato${st.hon ? ', mais honorários advocatícios' : ''}.`, notaFaltando(faltando)].filter(Boolean);
+    const notas = [`Correção monetária, juros de mora pro rata die e multa conforme os critérios de cada contrato, já abatidos os pagamentos (primeiro nos juros e na multa, CC, art. 354)${st.hon ? '; honorários advocatícios sobre o débito atualizado, pelo percentual do contrato' : ''}.`, notaFaltando(faltando)].filter(Boolean);
     return { cols, linhas, sub, notas };
   };
   ligarBotoesPDF('inadPdf', async () => {

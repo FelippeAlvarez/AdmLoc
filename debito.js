@@ -259,6 +259,9 @@ function debitoPorMes(ct, data) {
   return r.itens.filter(it => it.serie === 'alugueis' && it.total > 0.004).map(it => {
     const m = mesesEmAberto(ct, data).find(x => x.ym === it.itemId);
     const aberto = r2(it.parcelas.reduce((s, u) => s + u.Pb, 0));
-    return { ct, ym: it.itemId, mes: m?.mes, venc: m?.venc || it.data, sit: m?.sit, valor: aberto, dias: it.dias, total: it.total, faltando: r.faltando };
+    // Encargos separados: correção monetária (sobre o principal em aberto), juros de mora e multa
+    return { ct, ym: it.itemId, mes: m?.mes, venc: m?.venc || it.data, sit: m?.sit, valor: aberto, dias: it.dias, total: it.total, faltando: r.faltando,
+      // a correção fecha a conta (evita diferença de centavo entre as colunas e o total)
+      correcao: r2(it.total - aberto - r2(it.juros) - r2(it.multa)), juros: r2(it.juros), multa: r2(it.multa) };
   });
 }

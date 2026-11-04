@@ -28,6 +28,16 @@ const IDB = {
       r.onerror = () => falha(r.error);
     });
   },
+  async apagarPrefixo(loja, prefixo) {
+    const db = await this.abrir();
+    return new Promise((ok, falha) => {
+      const t = db.transaction(loja, 'readwrite');
+      const r = t.objectStore(loja).openCursor(IDBKeyRange.bound(prefixo, prefixo + '￿'));
+      r.onsuccess = () => { const cur = r.result; if (cur) { cur.delete(); cur.continue(); } };
+      t.oncomplete = () => ok();
+      t.onerror = () => falha(t.error);
+    });
+  },
   async set(loja, chave, valor) {
     const db = await this.abrir();
     return new Promise((ok, falha) => {
@@ -58,17 +68,29 @@ async function buscar(url, opcoes, onde = 'servidor') {
   quando o serviço recusa por excesso de pedidos (429), tem erro temporário (5xx) ou a rede falha. Telas que leem
   muitos arquivos (painel, inadimplência, relatórios) disparavam dezenas de pedidos de uma vez e eram recusadas.
 */
-const NUVEM_MAX = 4;
+const NUVEM_MAX = 8;
 let nuvemAtivos = 0;
 const nuvemFila = [];
+// Medição (Administração › Desempenho) e aviso discreto enquanto há vários pedidos à nuvem em andamento
+const Medicao = { pedidos: 0 };
+function indicadorNuvem() {
+  const pend = nuvemAtivos + nuvemFila.length;
+  let el = document.getElementById('indicadorNuvem');
+  if (!el) { el = document.createElement('div'); el.id = 'indicadorNuvem'; el.className = 'indicador-nuvem'; el.hidden = true; document.body?.appendChild(el); }
+  el.hidden = pend < 3;
+  el.textContent = `Carregando dados… (${pend})`;
+}
 async function vezNuvem() {
-  if (nuvemAtivos >= NUVEM_MAX) await new Promise(ok => nuvemFila.push(ok));
+  if (nuvemAtivos >= NUVEM_MAX) await new Promise(ok => { nuvemFila.push(ok); indicadorNuvem(); });
   nuvemAtivos++;
+  Medicao.pedidos++;
+  indicadorNuvem();
 }
 function fimNuvem() {
   nuvemAtivos--;
   const proximo = nuvemFila.shift();
   if (proximo) proximo();
+  indicadorNuvem();
 }
 async function buscarNuvem(url, opcoes) {
   for (let tentativa = 1; ; tentativa++) {

@@ -91,18 +91,39 @@ const NuvemDropbox = {
 
   // Nomes dos arquivos de uma subpasta (ex.: 'calculos'); pasta inexistente: lista vazia
   async listar(sub) {
-    const nomes = [];
-    let url = 'https://api.dropboxapi.com/2/files/list_folder', corpo = { path: this.caminho(sub), recursive: false };
-    for (;;) {
-      const r = await buscarNuvem(url, { method: 'POST', headers: { Authorization: 'Bearer ' + await this.token(), 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
-      if (r.status === 409) return nomes;
-      if (!r.ok) throw new Error(`Dropbox: erro ${r.status} ao listar ${sub}.`);
-      const j = await r.json();
-      for (const e of j.entries || []) if (e['.tag'] === 'file') nomes.push(e.name);
-      if (!j.has_more) return nomes;
-      url = 'https://api.dropboxapi.com/2/files/list_folder/continue';
-      corpo = { cursor: j.cursor };
+    return this.SUBPASTAS_CACHE.includes(sub) ? [...(await this.revsDe(sub)).keys()] : [...(await this._listarRevs(sub)).keys()];
+  },
+
+  /*
+    Cópia de segurança feita pelo próprio Dropbox (sem baixar e reenviar cada arquivo): copia os arquivos e as
+    pastas de dados para _backups/<pasta>. Devolve false se não der (o app faz então a cópia arquivo por arquivo).
+  */
+  async copiarParaBackup(pasta, nomes) {
+    const api = (rota, corpo) => this.token().then(t => buscarNuvem('https://api.dropboxapi.com/2/files/' + rota, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) }));
+    const existentes = await this._listarRevs('').catch(() => null);
+    const raiz = new Set();
+    if (existentes === null) return false;
+    // A lista da raiz traz só arquivos; as subpastas são conferidas pela própria lista delas
+    for (const n of nomes) {
+      const sub = n.split('/')[0];
+      if (n.includes('/')) { if ((await this._listarRevs(sub).catch(() => new Map())).size) raiz.add(sub); }
+      else if (existentes.has(n)) raiz.add(n);
     }
+    if (!raiz.size) return true;
+    let r = await api('copy_batch_v2', { entries: [...raiz].map(n => ({ from_path: this.caminho(n), to_path: this.caminho(`_backups/${pasta}/${n}`) })), autorename: false });
+    if (!r.ok) return false;
+    let j = await r.json();
+    for (let i = 0; j['.tag'] === 'async_job_id' || j['.tag'] === 'in_progress'; i++) {
+      if (i > 40) return false;
+      await new Promise(ok => setTimeout(ok, 500));
+      r = await api('copy_batch/check_v2', { async_job_id: j.async_job_id || j.async_job_id_ });
+      if (!r.ok) return false;
+      const k = await r.json();
+      j = { ...k, async_job_id: j.async_job_id };
+    }
+    // "complete" pode trazer falhas item a item (ex.: destino já existente): só conta se todos foram copiados
+    return j['.tag'] === 'complete' && (j.entries || []).every(e => e['.tag'] === 'success');
   },
 
   // Confere a pasta dos dados; se ainda não existir (primeira conexão), cria
@@ -129,7 +150,53 @@ const NuvemDropbox = {
   */
   _revs: new Map(),
 
+  /*
+    Cópia no aparelho dos arquivos das subpastas com um arquivo por contrato (extratos, calculos): uma consulta à
+    pasta devolve a revisão de todos os arquivos (vale 20 segundos); só os alterados são baixados, os demais vêm
+    da cópia guardada no navegador (IndexedDB). A trava de gravação continua pela revisão do Dropbox.
+  */
+  SUBPASTAS_CACHE: ['extratos', 'calculos'],
+  _listas: new Map(),
+  // Pasta da lista de revisões de um arquivo: '.' (arquivos da pasta principal), 'extratos' ou 'calculos'; '' sem cópia (ex.: _backups)
+  _subDe(c) { const i = c.indexOf('/'); if (i < 0) return '.'; return i > 0 && this.SUBPASTAS_CACHE.includes(c.slice(0, i)) && c.indexOf('/', i + 1) < 0 ? c.slice(0, i) : ''; },
+  _nomeEm: (c, sub) => sub === '.' ? c : c.slice(sub.length + 1),
+  revsDe(sub) {
+    const l = this._listas.get(sub);
+    if (l && Date.now() - l.em < 20000) return l.revs;
+    const revs = this._listarRevs(sub).catch(e => { this._listas.delete(sub); throw e; });
+    this._listas.set(sub, { em: Date.now(), revs });
+    return revs;
+  },
+  invalidarListas() { this._listas.clear(); },
+  async _listarRevs(sub) {
+    const revs = new Map();
+    let url = 'https://api.dropboxapi.com/2/files/list_folder', corpo = { path: sub === '.' || sub === '' ? this.pasta.replace(/\/+$/, '') : this.caminho(sub), recursive: false };
+    for (;;) {
+      const r = await buscarNuvem(url, { method: 'POST', headers: { Authorization: 'Bearer ' + await this.token(), 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      if (r.status === 409) return revs;
+      if (!r.ok) throw new Error(`Dropbox: erro ${r.status} ao listar ${sub}.`);
+      const j = await r.json();
+      for (const e of j.entries || []) if (e['.tag'] === 'file') revs.set(e.name, e.rev);
+      if (!j.has_more) return revs;
+      url = 'https://api.dropboxapi.com/2/files/list_folder/continue';
+      corpo = { cursor: j.cursor };
+    }
+  },
+  _chaveCache: c => 'dbx:' + c,
+
   async ler(c) {
+    const sub = this._subDe(c);
+    if (sub) {
+      try {
+        const lista = await this.revsDe(sub), nome = this._nomeEm(c, sub);
+        const rev = lista.get(nome);
+        // O Dropbox não diferencia maiúsculas: nome com outra grafia (arquivo copiado à mão) é baixado direto
+        const outraGrafia = !rev && [...lista.keys()].some(k => k.toLowerCase() === nome.toLowerCase());
+        if (!rev && !outraGrafia) { this._revs.set(c, null); return null; }
+        const g = rev ? await IDB.get('kv', this._chaveCache(this.caminho(c))).catch(() => null) : null;
+        if (g && g.rev === rev) { this._revs.set(c, rev); return g.texto; }
+      } catch (e) { if (e.conexao) throw e; /* sem a lista: lê direto do Dropbox */ }
+    }
     const r = await buscarNuvem('https://content.dropboxapi.com/2/files/download', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + await this.token(), 'Dropbox-API-Arg': jsonAscii({ path: this.caminho(c) }) },
@@ -140,8 +207,12 @@ const NuvemDropbox = {
       throw new Error('Dropbox: ' + t.slice(0, 200));
     }
     if (!r.ok) throw new Error(`Dropbox: erro ${r.status} ao ler ${c}.`);
-    try { this._revs.set(c, JSON.parse(r.headers.get('Dropbox-API-Result') || '{}').rev || undefined); } catch { this._revs.delete(c); }
-    return await r.text();
+    let rev;
+    try { rev = JSON.parse(r.headers.get('Dropbox-API-Result') || '{}').rev || undefined; } catch { rev = undefined; }
+    if (rev) this._revs.set(c, rev); else this._revs.delete(c);
+    const texto = await r.text();
+    if (sub && rev) IDB.set('kv', this._chaveCache(this.caminho(c)), { rev, texto }).catch(() => {});
+    return texto;
   },
 
   async gravar(c, texto) {
@@ -160,11 +231,20 @@ const NuvemDropbox = {
     if (r.status === 409) {
       const t = await r.text();
       this._revs.delete(c);
-      if (t.includes('conflict')) throw new ErroCorrida(c);
+      // Outro aparelho gravou antes: a lista de revisões guardada não vale mais (a nova tentativa relê do Dropbox)
+      if (t.includes('conflict')) { this.invalidarListas(); throw new ErroCorrida(c); }
       throw new Error(`Dropbox: não foi possível gravar ${c}: ${t.slice(0, 200)}`);
     }
     if (!r.ok) throw new Error(`Dropbox: erro ${r.status} ao gravar ${c}: ${(await r.text()).slice(0, 200)}`);
-    try { this._revs.set(c, (await r.json()).rev); } catch { this._revs.delete(c); }
+    let novaRev;
+    try { novaRev = (await r.json()).rev; } catch { novaRev = undefined; }
+    if (novaRev) this._revs.set(c, novaRev); else this._revs.delete(c);
+    // Mantém em dia a cópia no aparelho e a lista de revisões da pasta
+    const sub = this._subDe(c);
+    if (sub && novaRev) {
+      IDB.set('kv', this._chaveCache(this.caminho(c)), { rev: novaRev, texto }).catch(() => {});
+      this._listas.get(sub)?.revs.then(m => m.set(this._nomeEm(c, sub), novaRev)).catch(() => {});
+    }
   },
 
   // Conta do Dropbox ligada a este aparelho (nome e e-mail), para conferir se é a da administradora
@@ -179,7 +259,11 @@ const NuvemDropbox = {
     return c;
   },
 
-  sair() { localStorage.removeItem('cl-dbx-refresh'); localStorage.removeItem('cl-dbx-conta'); this._token = null; },
+  sair() {
+    localStorage.removeItem('cl-dbx-refresh'); localStorage.removeItem('cl-dbx-conta'); this._token = null;
+    this.invalidarListas();
+    IDB.apagarPrefixo('kv', 'dbx:').catch(() => {}); // cópia dos arquivos guardada neste aparelho
+  },
 };
 
 /*
