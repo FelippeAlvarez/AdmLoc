@@ -100,6 +100,7 @@ function telaSobre() {
       <div><dt>Direitos</dt><dd>© ${anosCopyright()} ${esc(TITULAR)}. Todos os direitos reservados.</dd></div>
     </dl>
     <p class="acoes-linha"><a class="bt" href="manual/index.html" target="_blank" rel="noopener">Manual de uso</a><a class="bt" href="#/termos">Termos de Uso</a></p>
+    <p class="dica"><button type="button" id="btCompartilharApp" class="link-discreto">Compartilhar o endereço deste aplicativo</button></p>
   </section>
   <section class="cartao caixa-termos">
     <h2>Componentes de terceiros</h2>
@@ -118,4 +119,20 @@ function telaSobre() {
       <p class="licenca">THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p>
     </details>
   </section>`;
+  const bc = document.getElementById('btCompartilharApp');
+  if (bc) bc.addEventListener('click', compartilharApp);
+}
+
+// Compartilhar o endereço do programa (menu de compartilhar do aparelho ou, se não houver, copia o link)
+async function compartilharApp() {
+  const dados = { title: 'Controle de Locações', text: 'Controle de Locações: contratos, inadimplência, repasses e relatórios para administradoras de imóveis.', url: 'https://felippealvarez.github.io/AdmLoc/' };
+  try {
+    if (navigator.share) { await navigator.share(dados); return; }
+  } catch (err) { if (err && err.name === 'AbortError') return; }
+  try {
+    await navigator.clipboard.writeText(dados.url);
+    alert('Link copiado:\n' + dados.url + '\n\nCole numa conversa para compartilhar.');
+  } catch (err) {
+    prompt('Copie o endereço do programa:', dados.url);
+  }
 }
