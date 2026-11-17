@@ -23,7 +23,7 @@ function novoAcordo(ct, calcId) {
   const h = hoje(), e = encargosDoDebito(ct, calcId), p = { ...paramsMora(ct), indice: e.indice };
   return {
     id: novoId(), nome: 'Acordo de ' + fmtData(h), situacao: 'proposta', data: h, calcId: calcId || '', devedor: 'locatario',
-    desconto: { modo: 'total', tipo: 'pct', valor: 0, itens: {} }, sinal: { tipo: 'pct', valor: 0, venc: h },
+    desconto: { modo: 'total', tipo: 'pct', valor: 0, itens: {} }, sinal: { tipo: 'valor', valor: 0, venc: h },
     parcelamento: { taxa: 0, jurosAte1: true, primeiroVenc: diaDoMes(addMes(h.slice(0, 7), 1), +h.slice(8)), modo: 'prazo', prazo: 6, parcela: '', indice: p.indice },
     encargos: e.encargos, obs: '',
   };
@@ -68,7 +68,17 @@ async function telaAcordo(cid, id, calcId) {
   return acompanhamentoAcordo(ct, a);
 }
 
+// Percentual acima de 100% não faz sentido: o valor foi digitado em reais com o seletor em %
+function corrigirPctAcordo(a) {
+  const l = [];
+  if (a.sinal?.tipo === 'pct' && Number(a.sinal.valor) > 100) { a.sinal.tipo = 'valor'; l.push('entrada'); }
+  if (a.desconto?.modo !== 'itens' && a.desconto?.tipo === 'pct' && Number(a.desconto.valor) > 100) { a.desconto.tipo = 'valor'; l.push('desconto'); }
+  return l;
+}
+
 function editorAcordo(ct, a, novo) {
+  const corrigidos = corrigirPctAcordo(a);
+  if (corrigidos.length) setTimeout(() => aviso(`O valor ${corrigidos.length > 1 ? 'da entrada e do desconto passou' : (corrigidos[0] === 'entrada' ? 'da entrada passou' : 'do desconto passou')} de mais de 100% para reais (R$). Confira e salve a proposta.`), 400);
   const cid = ct.id;
   let c = null;
   const calcs = Object.values(D.calcs[cid].calculos || {});
@@ -135,7 +145,11 @@ function editorAcordo(ct, a, novo) {
       const t = e.target, ds = t.dataset;
       if (e.type === 'input' && (t.type === 'date' || t.tagName === 'SELECT' || t.type === 'checkbox' || t.type === 'radio')) return;
       if (ds.a) caminho(a, ds.a, ds.a === 'parcelamento.prazo' ? Number(t.value) || '' : t.value);
-      else if (ds.num) caminho(a, ds.num, t.value.trim() === '' ? '' : r2(parseValor(t.value)));
+      else if (ds.num) {
+        caminho(a, ds.num, t.value.trim() === '' ? '' : r2(parseValor(t.value)));
+        // Ao sair do campo: acima de 100% em modo "%", o valor foi digitado em reais
+        if (e.type === 'change' && corrigirPctAcordo(a).length) { aviso('Valor acima de 100%: considerado em reais (R$).'); return mudou(true); }
+      }
       else if (ds.chk) caminho(a, ds.chk, t.checked);
       else if (ds.acTipo) { if (ds.acTipo === 'desc') a.desconto.tipo = t.value; else if (ds.acTipo === 'sinal') { const antes = a.sinal.tipo; a.sinal.tipo = t.value; if ((antes === 'parcela') !== (t.value === 'parcela')) return mudou(true); } else caminho(a.desconto.itens, ds.acTipo + '.tipo', t.value); }
       else if (ds.item) caminho(a.desconto.itens, ds.item + '.valor', t.value.trim() === '' ? '' : r2(parseValor(t.value)));
@@ -197,7 +211,7 @@ function itensDescontoHTML(a, c) {
 
 function resultadoAcordoHTML(a, c) {
   const deb = c.deb;
-  const av = avisoJurosMulta(deb);
+  const av = [avisoJurosMulta(deb), c.negociado > 0 && c.sinal >= c.negociado - 0.004 ? `A entrada cobre todo o valor negociado e não sobra nada para parcelar. Confira se a entrada está em % ou em R$.` : ''].filter(Boolean).join(' ');
   return `<h2>Resultado</h2>${av ? `<p class="alerta">${esc(av)}</p>` : ''}
     <div class="kpis"><div class="kpi"><span>Débito em ${fmtData(a.data)}</span><b>${fmtMoeda(deb.total)}</b></div><div class="kpi"><span>Desconto</span><b>${fmtMoeda(c.desconto)}</b></div>
       <div class="kpi"><span>Valor negociado</span><b>${fmtMoeda(c.negociado)}</b></div><div class="kpi"><span>Entrada${a.sinal?.tipo === 'parcela' ? ' (igual às parcelas)' : ''}</span><b>${fmtMoeda(c.sinal)}</b></div>
