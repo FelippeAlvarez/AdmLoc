@@ -13,13 +13,19 @@ function devedoresDoContrato(ct) {
 }
 const nomeDevedor = (ct, a) => (devedoresDoContrato(ct).find(d => d[0] === a.devedor) || devedoresDoContrato(ct)[0])[1];
 
+// Correção, juros e multa da parcela paga em atraso: os mesmos critérios do débito usado no acordo (cálculo salvo ou contrato)
+function encargosDoDebito(ct, calcId) {
+  const p = paramsMora(ct), k = (calcId && D.calcs[ct.id]?.calculos?.[calcId]?.crit) || critDoContrato(ct);
+  return { encargos: { multa: Number(k.multa ?? p.multa) || 0, juros: k.juros === 'mensal' ? Number(k.taxa) || 0 : p.juros }, indice: k.indice || p.indice };
+}
+
 function novoAcordo(ct, calcId) {
-  const p = paramsMora(ct), h = hoje();
+  const h = hoje(), e = encargosDoDebito(ct, calcId), p = { ...paramsMora(ct), indice: e.indice };
   return {
     id: novoId(), nome: 'Acordo de ' + fmtData(h), situacao: 'proposta', data: h, calcId: calcId || '', devedor: 'locatario',
     desconto: { modo: 'total', tipo: 'pct', valor: 0, itens: {} }, sinal: { tipo: 'pct', valor: 0, venc: h },
     parcelamento: { taxa: 0, jurosAte1: true, primeiroVenc: diaDoMes(addMes(h.slice(0, 7), 1), +h.slice(8)), modo: 'prazo', prazo: 6, parcela: '', indice: p.indice },
-    encargos: { multa: p.multa, juros: p.juros }, obs: '',
+    encargos: e.encargos, obs: '',
   };
 }
 
@@ -136,6 +142,8 @@ function editorAcordo(ct, a, novo) {
       else if (t.name === 'acDescModo') { a.desconto.modo = t.value; return mudou(true); }
       else if (t.name === 'acModo') { a.parcelamento.modo = t.value; return mudou(true); }
       else return;
+      // Trocou o débito: a parcela em atraso passa a seguir os critérios dele
+      if (ds.a === 'calcId') { const e = encargosDoDebito(ct, a.calcId); a.encargos = e.encargos; a.parcelamento.indice = e.indice; }
       mudou(ds.a === 'calcId' || ds.a === 'data');
     };
     raiz.oninput = ler;
