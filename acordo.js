@@ -60,8 +60,22 @@ function debitoAcordo(ct, a, data = a.data) {
   for (const k in comp) comp[k] = r2(comp[k]);
   // Meses do débito: itens "AAAA-MM" (aglutinado) ou "AAAA-MM|rubrica" (rubricas em separado)
   const meses = [...new Set(r.itens.map(it => (String(it.itemId).match(/^(\d{4}-\d{2})(?:\||$)/) || [])[1]).filter(Boolean))];
-  return { data, comp, total: r2(Object.values(comp).reduce((s, v) => s + v, 0)), meses, calcNome: calc.nome || 'Débito pelos critérios do contrato', indice: calc.crit?.indice || paramsMora(ct).indice, r };
+  const k = calc.crit || {};
+  return { data, comp, total: r2(Object.values(comp).reduce((s, v) => s + v, 0)), meses, calcNome: calc.nome || 'Débito pelos critérios do contrato', indice: k.indice || paramsMora(ct).indice,
+    crit: { juros: k.juros || 'mensal', taxa: Number(k.taxa) || 0, multa: Number(k.multa) || 0, lei14905: !!k.lei14905 }, r };
 }
+
+// Rótulo de cada componente do débito, com a taxa usada (juros e multa)
+function rotuloComponente(k, deb) {
+  const rot = COMPONENTES_ACORDO.find(c => c[0] === k)?.[1] || k, cr = deb?.crit;
+  if (!cr) return rot;
+  if (k === 'juros') return `${rot} (${cr.juros === 'mensal' ? fmtPct(cr.taxa) + '% ao mês' : (TIPOS_JUROS[cr.juros] || cr.juros).toLowerCase()}${cr.lei14905 ? '; taxa legal desde 30/08/2024' : ''})`;
+  if (k === 'multa') return `${rot} (${fmtPct(cr.multa)}% sobre o valor corrigido)`;
+  return rot;
+}
+// Aviso quando os juros mensais do critério passam da multa (provável inversão no cadastro do contrato)
+const avisoJurosMulta = deb => deb?.crit && deb.crit.juros === 'mensal' && deb.crit.taxa > deb.crit.multa
+  ? `Confira os encargos usados: juros de ${fmtPct(deb.crit.taxa)}% ao mês e multa de ${fmtPct(deb.crit.multa)}%. Se estiverem invertidos, corrija em Editar contrato › Encargos moratórios${deb.calcNome && !/critérios do contrato/.test(deb.calcNome) ? ' ou no cálculo salvo usado no acordo' : ''}.` : '';
 
 const valorOuPct = (base, tipo, v) => Math.min(base, Math.max(0, tipo === 'valor' ? r2(Number(v) || 0) : r2(base * (Number(v) || 0) / 100)));
 
@@ -119,10 +133,22 @@ function planoPrice({ saldo, taxa, f1, primeiroVenc, modo, prazo, parcela, numer
 // Proposta completa (tela, PDF e gravação). Depois de aceito, o débito fica congelado no acordo.
 function calcularAcordo(ct, a) {
   const deb = a.situacao === 'proposta' || !a.debito ? debitoAcordo(ct, a) : a.debito;
-  const neg = negociacao(a, deb);
+  let neg = negociacao(a, deb);
   const p = a.parcelamento || {};
   const i = (Number(p.taxa) || 0) / 100;
   const f1 = p.jurosAte1 === false ? 1 : fatorPeriodo(i, a.data, p.primeiroVenc);
+  // Entrada igual às parcelas: E = (negociado − E) × K, com K = parcela por real financiado (Price)
+  if (a.sinal?.tipo === 'parcela' && neg.negociado > 0) {
+    let s;
+    if (p.modo === 'parcela') s = Math.min(neg.negociado, r2(Number(p.parcela) || 0));
+    else {
+      const n = Math.floor(Number(p.prazo) || 0);
+      if (n < 1) throw new Error('Informe o número de parcelas.');
+      const K = i === 0 ? 1 / n : f1 * i / ((1 - Math.pow(1 + i, -n)) * (1 + i));
+      s = r2(neg.negociado * K / (1 + K));
+    }
+    neg = { ...neg, sinal: s, saldo: r2(neg.negociado - s) };
+  }
   const plano = neg.saldo > 0 ? planoPrice({ saldo: neg.saldo, taxa: p.taxa, f1, primeiroVenc: p.primeiroVenc, modo: p.modo, prazo: p.prazo, parcela: p.parcela }) : { pmt: 0, n: 0, parcelas: [] };
   const totalParcelas = somar(plano.parcelas, x => x.valor), totalJuros = somar(plano.parcelas, x => x.juros);
   // Rateio: parte dos honorários advocatícios no valor negociado, depois do desconto

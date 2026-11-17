@@ -109,6 +109,7 @@ function telaSobre() {
       <tbody>
         <tr><td><b>jsPDF</b> 2.5.1<br><span class="dica">© 2010-2021 James Hall, yWorks GmbH e colaboradores</span></td><td>Geração dos relatórios em PDF</td><td><a href="https://github.com/parallax/jsPDF/blob/master/LICENSE" target="_blank" rel="noopener">MIT</a></td></tr>
         <tr><td><b>pdf.js</b> 3.11.174<br><span class="dica">© 2023 Mozilla Foundation</span></td><td>Prévia dos PDFs na tela</td><td><a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache 2.0</a></td></tr>
+        <tr><td><b>Inter</b> (fonte)<br><span class="dica">© 2016 The Inter Project Authors</span></td><td>Fonte das telas</td><td><a href="lib/fontes/inter-ofl.txt" target="_blank" rel="noopener">SIL Open Font License 1.1</a></td></tr>
         <tr><td><b>Banco Central do Brasil</b> – SGS</td><td>Índices de correção (IGP-M, IPCA, INPC, IGP-DI)</td><td>Dados públicos</td></tr>
       </tbody>
     </table></div>

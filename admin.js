@@ -51,7 +51,8 @@ async function telaLogin(mensagem) {
       });
     });
   } else {
-    c.innerHTML = `<section class="cartao caixa-login form"><h1>Controle de Locações</h1>
+    c.innerHTML = entradaHTML(`<section class="cartao caixa-login form"><h1>Entrar</h1>
+      <p class="dica" style="margin:2px 0 0">Use o login e a senha recebidos da administradora.</p>
       ${mensagem ? `<p class="alerta">${esc(mensagem)}</p>` : ''}
       <form id="formLogin" class="grade-login">
         <div class="campo"><label for="lgLogin">Login</label><input id="lgLogin" required autocapitalize="off" autocomplete="username" value="${esc(localStorage.getItem('cl-ultimo-login') || '')}"></div>
@@ -59,7 +60,8 @@ async function telaLogin(mensagem) {
         <label class="inline"><input type="checkbox" id="lgLembrar"> Manter conectado neste aparelho</label>
         <button class="bt primario" type="submit">Entrar</button>
       </form>
-      <p class="dica">Esqueceu a senha? Peça ao administrador para definir uma nova.</p>${outroLocal}${dropboxFixo() ? dicaInstalarHTML() : ''}</section>`;
+      <p class="dica">Esqueceu a senha? Peça ao administrador para definir uma nova.</p>${outroLocal}${dropboxFixo() ? dicaInstalarHTML() : ''}
+      <p class="rodape-entrada">${versaoInstalada() ? 'Versão ' + esc(versaoInstalada()) + ' · ' : ''}© ${anosCopyright()} ${esc(TITULAR)}</p></section>`);
     ligarInstalar();
     ($('#lgLogin').value ? $('#lgSenha') : $('#lgLogin')).focus();
     $('#formLogin').addEventListener('submit', e => {
@@ -104,7 +106,9 @@ function telaConta() {
       <div class="campo"><label>&nbsp;</label><button class="bt primario" type="submit">Trocar senha</button></div>
     </form>
   </section>
+  ${secaoAparenciaHTML()}
   ${Auth.ehAdmin() ? '<p><a class="bt" href="#/admin">Ir para a Administração</a></p>' : ''}`;
+  ligarAparencia();
   $('#formSenha').addEventListener('submit', e => {
     e.preventDefault();
     executar(async () => {

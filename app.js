@@ -124,6 +124,7 @@ async function carregarColecoes() {
   COLECOES.forEach((c, i) => { D[c] = res[i + 2].itens || {}; });
   D.carregadoEm = Date.now();
   atualizarDatalist();
+  guardarMarca();
 }
 
 function atualizarDatalist() {
@@ -633,7 +634,7 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('beforeunload', e => { if (sujo) { e.preventDefault(); e.returnValue = ''; } });
 
 function destacarMenu(h) {
-  $$('#menu a').forEach(a => a.classList.toggle('ativo', h.startsWith('#/' + a.dataset.rota)));
+  $$('#menu a[data-rota], #barraInferior a[data-rota]').forEach(a => a.classList.toggle('ativo', h.startsWith('#/' + a.dataset.rota)));
 }
 
 // Abre a tela do endereço atual, medindo o tempo e os pedidos à nuvem (Administração › Desempenho)
@@ -641,7 +642,7 @@ async function rotear(recarregar) {
   const t0 = performance.now(), p0 = Medicao.pedidos;
   const tela = (location.hash || '#/painel').split('?')[0].replace(/(.\/[^/]+)\/[\w-]{10,}/g, '$1/…');
   try { return await rotearTela(recarregar); }
-  finally { registrarDesempenho(tela, performance.now() - t0, Medicao.pedidos - p0); }
+  finally { registrarDesempenho(tela, performance.now() - t0, Medicao.pedidos - p0); atualizarContadores(); }
 }
 
 const DESEMPENHO_CHAVE = 'cl-desempenho';
@@ -717,87 +718,124 @@ async function telaPainel(ym) {
   const ativos = contratosAtivos();
   const exts = await Promise.all(ativos.map(c => carregarExtrato(c.id)));
   let naoGerados = 0, abertos = 0, naoPagos = 0, reajustes = 0, totalConta = 0, totalCob = 0, totalRec = 0, totalAberto = 0, totalTaxa = 0;
+  // Série dos últimos 12 meses (gráfico e linhas de tendência) e débito vencido por tempo de atraso (posição de hoje)
+  const serie = Array.from({ length: 12 }, (_, i) => ({ ym: addMes(ym, i - 11), dev: 0, rec: 0, aberto: 0, taxa: 0 }));
+  const idxSerie = Object.fromEntries(serie.map((s, i) => [s.ym, i]));
+  const faixas = [{ rot: 'Até 30 dias', v: 0, cor: '#f0b429' }, { rot: '31 a 90 dias', v: 0, cor: '#e8590c' }, { rot: 'Mais de 90 dias', v: 0, cor: '#b3261e' }];
+  let mesesAtraso = 0;
+  const hj = hoje(), diaMs = 864e5;
   const linhas = ativos.map((ct, i) => {
     const cad = calcularExtrato(ct, exts[i]);
+    for (const z of cad) {
+      const s = serie[idxSerie[z.ym]];
+      if (s) { s.dev += z.c.devido; s.rec += z.c.recebido; s.aberto += Math.max(0, z.c.emAberto); s.taxa += z.c.taxa; }
+      const venc = z.c.emAberto > 0 && vencimentoMes(ct, z.ym, z.mes);
+      if (venc && venc < hj) {
+        const dias = Math.round((new Date(hj) - new Date(venc)) / diaMs);
+        faixas[dias <= 30 ? 0 : dias <= 90 ? 1 : 2].v += z.c.emAberto; mesesAtraso++;
+      }
+    }
     const x = cad.find(z => z.ym === ym);
     const antes = !x && ym < (cad[0]?.ym || inicioControle(ct));
     let sit, pagto = '';
     if (x) {
-      sit = x.mes.fechado ? '<span class="chip fechado">Fechado</span>' : '<span class="chip aberto">Em aberto</span>';
+      sit = x.mes.fechado ? 'Mês fechado' : 'Mês em aberto';
       pagto = chipPagto(x.c, vencimentoMes(ct, ym, x.mes));
       if (!x.mes.fechado) abertos++;
       if (x.c.emAberto > 0) { naoPagos++; totalAberto += x.c.emAberto; }
       totalConta += x.c.saldoConta; totalCob += x.c.devido; totalRec += x.c.recebido; totalTaxa += x.c.taxa;
     }
-    else if (antes) sit = '<span class="chip neutro">Antes do início</span>';
-    else { sit = '<span class="chip pendente">Não gerado</span>'; naoGerados++; }
+    else if (antes) { sit = ''; pagto = '<span class="chip neutro">Antes do início</span>'; }
+    else { sit = ''; pagto = '<span class="chip pendente">Mês não gerado</span>'; naoGerados++; }
     const reaj = !antes && reajustePendente(ct, ym);
     if (reaj) reajustes++;
     // Dados da linha (para buscar, filtrar e ordenar na própria tela)
     const estMes = !x ? (antes ? 'antes' : 'naoGerado') : x.mes.fechado ? 'fechado' : 'aberto';
     const estPag = !x ? '' : x.c.situacao === 'pago' ? 'pago' : x.c.situacao === 'parcial' ? 'parcial' : x.c.devido > 0 ? 'naoPago' : '';
-    return { ct, x, reaj, sit, pagto, estMes, estPag, contrato: ct.codigo, imovel: imovelCurto(D.imoveis[ct.imovelId]), cliente: nomeDe('locadores', ct.locadorId), locatario: nomeDe('locatarios', ct.locatarioId),
+    const im = D.imoveis[ct.imovelId];
+    return { ct, x, reaj, sit, pagto, estMes, estPag, contrato: ct.codigo, imovel: imovelCurto(im), imCod: im?.codigo || '', imEnd: im ? [im.logradouro, im.numero].filter(Boolean).join(', ') + (im.complemento ? ' · ' + im.complemento : '') : '—',
+      cliente: nomeDe('locadores', ct.locadorId), locatario: nomeDe('locatarios', ct.locatarioId),
       venc: x ? vencimentoMes(ct, ym, x.mes) : '', devido: x?.c.devido ?? -1, recebido: x?.c.recebido ?? -1, taxa: x?.c.taxa ?? -1, repassado: x?.c.repassado ?? -1, saldoConta: x?.c.saldoConta ?? -1,
-      busca: [ct.codigo, descImovel(D.imoveis[ct.imovelId]), nomeDe('locadores', ct.locadorId), nomeDe('locatarios', ct.locatarioId)].join(' ').toLowerCase() };
+      busca: [ct.codigo, descImovel(im), im?.codigo, nomeDe('locadores', ct.locadorId), nomeDe('locatarios', ct.locatarioId)].join(' ').toLowerCase() };
   });
-  const linhaHTML = l => { const v = k => l.x ? fmtNum(l.x.c[k]) : ''; return `<tr data-link="#/contrato/${l.ct.id}/${ym}">
-      <td><b>${esc(l.contrato)}</b>${l.reaj ? ` <span class="chip reajuste" title="Reajuste anual de ${mesNum(l.reaj)} a confirmar">Reajuste</span>` : ''}</td><td title="${esc(descImovel(D.imoveis[l.ct.imovelId]))}">${esc(l.imovel)}</td>
-      <td>${esc(l.cliente)}</td><td>${esc(l.locatario)}</td><td>${l.venc ? fmtData(l.venc) : ''}</td>
-      <td>${l.sit}</td><td>${l.pagto}</td><td class="num">${v('devido')}</td><td class="num">${v('recebido')}</td><td class="num">${v('taxa')}</td><td class="num">${v('repassado')}</td>
-      <td class="num"><b>${v('saldoConta')}</b></td></tr>`; };
-  const COLS_PAINEL = [['contrato', 'Contrato'], ['imovel', 'Imóvel'], ['cliente', 'Cliente'], ['locatario', 'Locatário'], ['venc', 'Vencimento'], ['estMes', 'Mês'], ['estPag', 'Pagamento'],
+  const ant = serie[10];
+  const v = (l, k) => l.x ? fmtNum(l.x.c[k]) : '';
+  const linhaHTML = l => `<tr data-link="#/contrato/${l.ct.id}/${ym}">
+      <td><b>${esc(l.contrato)}</b>${l.reaj ? `<span class="tag-mini" title="Reajuste anual de ${mesNum(l.reaj)} a confirmar">Reajuste</span>` : ''}</td>
+      <td class="im" title="${esc(descImovel(D.imoveis[l.ct.imovelId]))}">${l.imCod ? `<b>${esc(l.imCod)}</b><small>${esc(l.imEnd)}</small>` : esc(l.imEnd)}</td>
+      <td>${pessoaHTML(l.locatario, 'Cliente: ' + l.cliente)}</td><td>${l.venc ? fmtData(l.venc) : ''}</td>
+      <td>${l.pagto}${l.sit ? `<small class="dica" style="display:block;margin-top:2px;white-space:nowrap">${l.sit}</small>` : ''}</td><td class="num">${v(l, 'devido')}</td><td class="num">${v(l, 'recebido')}</td><td class="num">${v(l, 'taxa')}</td><td class="num">${v(l, 'repassado')}</td>
+      <td class="num"><b>${v(l, 'saldoConta')}</b></td></tr>`;
+  const cartaoHTML = l => `<a class="cartao-m" href="#/contrato/${l.ct.id}/${ym}">${avatarHTML(l.locatario, 34)}
+      <div><b>${esc(l.locatario)}</b><small>${esc([l.contrato, l.imCod || l.imEnd].filter(Boolean).join(' · '))}${l.venc ? ' · vence ' + fmtData(l.venc).slice(0, 5) : ''}</small>${l.reaj ? '<span class="tag-mini" style="margin:3px 0 0">Reajuste</span>' : ''}</div>
+      <div class="vv">${l.x ? fmtNum(l.x.c.devido) : ''}${l.pagto}</div></a>`;
+  const COLS_PAINEL = [['contrato', 'Contrato'], ['imovel', 'Imóvel'], ['locatario', 'Locatário'], ['venc', 'Vencimento'], ['estPag', 'Situação'],
     ['devido', 'Devido', 'n'], ['recebido', 'Recebido', 'n'], ['taxa', 'Taxa adm.', 'n'], ['repassado', 'Repassado', 'n'], ['saldoConta', 'Saldo em conta', 'n']];
-  const FILTROS_PAINEL = [['', 'Todas as situações'], ['naoPago', 'Não pago pelo locatário'], ['parcial', 'Pago em parte'], ['pago', 'Pago'], ['aberto', 'Mês em aberto'], ['fechado', 'Mês fechado'],
-    ['naoGerado', 'Mês não gerado'], ['reajuste', 'Com reajuste a confirmar'], ['saldo', 'Com saldo em conta']];
+  const FILTROS_PAINEL = [['', 'Todos'], ['naoPago', 'Não pago'], ['parcial', 'Pago em parte'], ['pago', 'Pago'], ['aberto', 'Mês em aberto'], ['fechado', 'Mês fechado'],
+    ['naoGerado', 'Não gerado'], ['reajuste', 'Reajuste a confirmar'], ['saldo', 'Com saldo em conta']];
   let ordP = { k: 'locatario', d: 1, f: '' };
   try { Object.assign(ordP, JSON.parse(sessionStorage.getItem('cl-painel') || '{}')); } catch { /* usa o padrão */ }
-  const filtroOk = l => !ordP.f || (ordP.f === 'reajuste' ? !!l.reaj : ordP.f === 'saldo' ? l.saldoConta > 0.004 : l.estMes === ordP.f || l.estPag === ordP.f);
+  if (!COLS_PAINEL.some(c => c[0] === ordP.k)) ordP.k = 'locatario';
+  const passaFiltro = (l, f) => !f || (f === 'reajuste' ? !!l.reaj : f === 'saldo' ? l.saldoConta > 0.004 : l.estMes === f || l.estPag === f);
+  const contagem = Object.fromEntries(FILTROS_PAINEL.map(([f]) => [f, linhas.filter(l => passaFiltro(l, f)).length]));
 
+  const varRec = variacao(totalRec, ant.rec, 'sobe'), varAb = variacao(totalAberto, ant.aberto, 'desce'), varTx = variacao(totalTaxa, ant.taxa, 'sobe');
+  const temGrafico = ativos.length && serie.some(s => s.dev > 0 || s.rec > 0);
+  const totAtraso = faixas.reduce((s, f) => s + f.v, 0);
   $('#conteudo').innerHTML = cabecalho(`Painel de ${nomeMes(ym)}`, 'Situação do mês em cada contrato ativo',
     `<a class="bt" href="#/painel/${addMes(ym, -1)}" title="Mês anterior">&#9664;</a>
      <input type="month" id="mesPainel" value="${ym}">
      <a class="bt" href="#/painel/${addMes(ym, 1)}" title="Próximo mês">&#9654;</a>`) + `
-  <div class="kpis">
-    <div class="kpi"><span>Contratos ativos</span><b>${ativos.length}</b></div>
-    <div class="kpi"><span>Meses não gerados</span><b>${naoGerados}</b></div>
-    <div class="kpi"><span>Meses em aberto</span><b>${abertos}</b></div>
-    <div class="kpi"><span>Devido pelos locatários</span><b>${fmtMoeda(totalCob)}</b></div>
-    <div class="kpi"><span>Recebido no mês</span><b>${fmtMoeda(totalRec)}</b></div>
-    <div class="kpi"><span>Não pago pelo locatário</span><b class="${totalAberto > 0 ? 'neg' : ''}">${fmtMoeda(totalAberto)}</b><small>${naoPagos} contrato${naoPagos === 1 ? '' : 's'}</small></div>
-    <div class="kpi"><span>Taxas de administração</span><b>${fmtMoeda(totalTaxa)}</b></div>
-    <div class="kpi"><span>Saldo em conta (a repassar)</span><b>${fmtMoeda(totalConta)}</b></div>
+  <div class="kpis k4">
+    ${kpiHTML({ ic: 'dinheiro', cor: 'az', t: 'Devido pelos locatários', v: fmtMoeda(totalCob), sub: `${ativos.length} contrato${ativos.length === 1 ? '' : 's'} ativo${ativos.length === 1 ? '' : 's'}`, sp: serie.map(s => s.dev) })}
+    ${kpiHTML({ ic: 'entrada', cor: 'vd', t: 'Recebido no mês', v: fmtMoeda(totalRec), variacao: varRec, sub: varRec ? '' : (totalCob > 0 ? `${Math.round(totalRec / totalCob * 100)}% do devido` : ''), sp: serie.map(s => s.rec), spCor: 'var(--ok)' })}
+    ${kpiHTML({ ic: 'alerta', cor: 'vm', t: 'Não pago pelo locatário', v: fmtMoeda(totalAberto), neg: totalAberto > 0, sub: `${naoPagos} contrato${naoPagos === 1 ? '' : 's'}`, variacao: varAb, sp: serie.map(s => s.aberto), spCor: 'var(--erro)', href: '#/inadimplencia' })}
+    ${kpiHTML({ ic: 'pct', cor: 'rx', t: 'Taxas de administração', v: fmtMoeda(totalTaxa), variacao: varTx, sp: serie.map(s => s.taxa), spCor: 'var(--roxo)' })}
   </div>
-  ${reajustes ? `<p class="alerta">${reajustes} contrato${reajustes > 1 ? 's têm' : ' tem'} reajuste anual do aluguel a confirmar neste mês (marcados com <span class="chip reajuste">Reajuste</span>). Abra o mês do contrato para conferir o cálculo e aplicar ou não.</p>` : ''}
-  <section class="cartao">
+  <div class="kpis k4">
+    ${kpiHTML({ mini: true, ic: 'cofre', cor: 'az', t: 'Saldo em conta (a repassar)', v: fmtMoeda(totalConta), href: '#/repasses' })}
+    ${kpiHTML({ mini: true, ic: 'contrato', cor: 'cz', t: 'Contratos ativos', v: String(ativos.length), href: '#/vigentes' })}
+    ${kpiHTML({ mini: true, ic: 'cal', cor: 'am', t: 'Meses em aberto', v: String(abertos) })}
+    ${kpiHTML({ mini: true, ic: 'pasta', cor: naoGerados ? 'vm' : 'cz', t: 'Meses não gerados', v: String(naoGerados) })}
+  </div>
+  ${reajustes ? `<div class="alerta faixa">${ic('cal')}<span><b>${reajustes} contrato${reajustes > 1 ? 's' : ''}</b> com reajuste anual do aluguel a confirmar neste mês. Abra o mês do contrato para conferir o cálculo e aplicar ou não.</span><span class="espaco"></span><button class="bt pequeno" id="btVerReaj">Ver contratos</button></div>` : ''}
+  ${temGrafico ? `<div class="graficos">
+    <section class="cartao"><div class="graf-cab"><h2>Devido × recebido · últimos 12 meses</h2><div class="legenda"><span><i class="l-dev"></i>Devido</span><span><i class="l-rec"></i>Recebido</span></div></div>
+      ${graficoBarrasHTML(serie, ym)}</section>
+    <section class="cartao"><div class="graf-cab"><h2>Em atraso por tempo</h2><small>${fmtMoeda(totAtraso)} · sem encargos</small></div>
+      ${totAtraso > 0 ? `<a class="rosca" href="#/inadimplencia" title="Abrir a Inadimplência">${roscaHTML(faixas, String(mesesAtraso), mesesAtraso === 1 ? 'mês' : 'meses')}</a>` : '<p class="vazio">Nenhum mês em atraso nos contratos ativos.</p>'}</section>
+  </div>` : ''}
+  <section class="cartao painel-cartao">
     <div class="cartao-cab"><h2>Contratos</h2><div class="acoes">
-      <select id="painelFiltro" aria-label="Filtrar por situação">${FILTROS_PAINEL.map(([v, r]) => `<option value="${v}"${v === ordP.f ? ' selected' : ''}>${r}</option>`).join('')}</select>
-      <label class="inline">Ordenar por <select id="painelOrd">${COLS_PAINEL.map(([k, r]) => `<option value="${k}"${k === ordP.k ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
-      <select id="painelDir" aria-label="Ordem"><option value="1"${ordP.d > 0 ? ' selected' : ''}>Crescente</option><option value="-1"${ordP.d < 0 ? ' selected' : ''}>Decrescente</option></select>
       <input type="search" id="busca" placeholder="Buscar cliente, locatário, imóvel…">
       ${naoGerados ? `<button class="bt primario" id="btGerarTodos">Gerar ${nomeMes(ym)} em ${naoGerados} contrato${naoGerados > 1 ? 's' : ''}</button>` : ''}
     </div></div>
-    ${ativos.length ? '<div class="rolagem" id="painelTab"></div><p class="dica" id="painelQtd"></p>' : `<p class="vazio">Nenhum contrato ativo. <a href="#/contratos/novo">Cadastrar contrato</a></p>`}
+    ${ativos.length ? `<div class="pilulas" id="painelFiltros" style="margin-bottom:12px"></div><div class="rolagem so-tabela" id="painelTab"></div><div class="cartoes-m" id="painelCartoes"></div><p class="dica" id="painelQtd"></p>`
+      : `<p class="vazio">Nenhum contrato ativo. <a href="#/contratos/novo">Cadastrar contrato</a></p>`}
   </section>`;
 
-  // Tabela com ordenação (clique no título da coluna ou escolha acima), filtro de situação e busca
+  // Tabela com ordenação (clique no título da coluna), filtro de situação (pílulas) e busca
   const desenharTabela = () => {
     if (!$('#painelTab')) return;
+    $('#painelFiltros').innerHTML = FILTROS_PAINEL.filter(([f]) => !f || contagem[f] || ordP.f === f)
+      .map(([f, r]) => `<button type="button" class="pilula${ordP.f === f ? ' on' : ''}" data-f="${f}">${r} <b>${contagem[f]}</b></button>`).join('');
     const [, , tipo] = COLS_PAINEL.find(c => c[0] === ordP.k) || [];
     const t = ($('#busca')?.value || '').trim().toLowerCase();
-    const lista = linhas.filter(l => filtroOk(l) && (!t || l.busca.includes(t)))
+    const lista = linhas.filter(l => passaFiltro(l, ordP.f) && (!t || l.busca.includes(t)))
       .sort((a, b) => (tipo === 'n' ? a[ordP.k] - b[ordP.k] : comparar(String(a[ordP.k] || ''), String(b[ordP.k] || ''))) * ordP.d || comparar(a.locatario, b.locatario));
     const th = ([k, r, n]) => `<th class="ordenavel${n ? ' num' : ''}" data-ord="${k}">${r}${ordP.k === k ? (ordP.d > 0 ? ' ▲' : ' ▼') : ''}</th>`;
     $('#painelTab').innerHTML = `<table class="tabela clicavel"><thead><tr>${COLS_PAINEL.map(th).join('')}</tr></thead><tbody>${lista.map(linhaHTML).join('')}</tbody></table>`;
+    $('#painelCartoes').innerHTML = lista.map(cartaoHTML).join('') || '<p class="vazio">Nenhum contrato nesta situação.</p>';
     $('#painelQtd').textContent = lista.length === linhas.length ? '' : `${lista.length} de ${linhas.length} contratos.`;
     $$('#painelTab tr[data-link]').forEach(tr => tr.addEventListener('click', () => { location.hash = tr.dataset.link; }));
     $$('#painelTab [data-ord]').forEach(h => h.addEventListener('click', () => { ordP.d = ordP.k === h.dataset.ord ? -ordP.d : 1; ordP.k = h.dataset.ord; guardar(); }));
+    $$('#painelFiltros [data-f]').forEach(b => b.addEventListener('click', () => { ordP.f = b.dataset.f; guardar(); }));
   };
-  const guardar = () => { try { sessionStorage.setItem('cl-painel', JSON.stringify(ordP)); } catch { /* sem armazenamento */ } $('#painelOrd').value = ordP.k; $('#painelDir').value = String(ordP.d); desenharTabela(); };
-  $('#painelFiltro').addEventListener('change', e => { ordP.f = e.target.value; guardar(); });
-  $('#painelOrd').addEventListener('change', e => { ordP.k = e.target.value; guardar(); });
-  $('#painelDir').addEventListener('change', e => { ordP.d = +e.target.value; guardar(); });
+  const guardar = () => { try { sessionStorage.setItem('cl-painel', JSON.stringify(ordP)); } catch { /* sem armazenamento */ } desenharTabela(); };
   $('#busca').addEventListener('input', desenharTabela);
   desenharTabela();
+  $('#btVerReaj')?.addEventListener('click', () => { ordP.f = 'reajuste'; guardar(); $('#painelFiltros')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $$('.graf-barras g.mes').forEach(g => g.addEventListener('click', () => { location.hash = '#/painel/' + g.dataset.ym; }));
 
   $('#mesPainel').addEventListener('change', e => { if (ehMes(e.target.value)) location.hash = '#/painel/' + e.target.value; });
   $('#btGerarTodos')?.addEventListener('click', () => executar(async () => {
@@ -856,13 +894,13 @@ function telaLista(col) {
   const itens = Object.values(D[col]).filter(r => col !== 'contratos' || verTodos || r.status !== 'encerrado').sort(L.ordem);
   const linhas = itens.map(r => {
     const vals = L.cols.map(c => c[1](r) ?? '');
-    return `<tr data-link="${L.link ? L.link(r) : `#/${col}/${r.id}`}" data-busca="${esc(vals.join(' ').toLowerCase())}">${vals.map((v, i) => `<td class="${L.cols[i][2] || ''}">${esc(v)}</td>`).join('')}</tr>`;
+    return `<tr data-link="${L.link ? L.link(r) : `#/${col}/${r.id}`}" data-busca="${esc(vals.join(' ').toLowerCase())}">${vals.map((v, i) => `<td class="${L.cols[i][2] || ''}">${i === 0 && (col === 'locadores' || col === 'locatarios') ? pessoaHTML(v) : esc(v)}</td>`).join('')}</tr>`;
   }).join('');
   $('#conteudo').innerHTML = cabecalho(titulo, `${itens.length} registro${itens.length === 1 ? '' : 's'}`, `<a class="bt primario" href="#/${col}/novo">+ ${novo}</a>`) + `
   <section class="cartao">
     <div class="cartao-cab"><input type="search" id="busca" placeholder="Buscar…">
       ${col === 'contratos' ? `<label class="inline"><input type="checkbox" id="verTodos" ${verTodos ? 'checked' : ''}> Mostrar encerrados</label>` : ''}</div>
-    ${itens.length ? `<div class="rolagem"><table class="tabela clicavel"><thead><tr>${L.cols.map(c => `<th class="${c[2] || ''}">${c[0]}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>`
+    ${itens.length ? `<div class="rolagem"><table class="tabela clicavel cartoes-lista"><thead><tr>${L.cols.map(c => `<th class="${c[2] || ''}">${c[0]}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>`
       : `<p class="vazio">Nenhum registro. <a href="#/${col}/novo">${novo}</a></p>`}
   </section>`;
   ligarBusca();
@@ -977,37 +1015,74 @@ async function telaContrato(cid) {
   const ultimo = cad[cad.length - 1];
   const proximo = ultimo ? addMes(ultimo.ym, 1) : inicioControle(ct);
   const atual = mesAtual();
-  const loc = D.locadores[ct.locadorId];
+  const loc = D.locadores[ct.locadorId], lt = D.locatarios[ct.locatarioId];
   const dl = (r, v) => v ? `<div><dt>${r}</dt><dd>${esc(v)}</dd></div>` : '';
   const vencidos = cad.filter(x => x.c.emAberto > 0 && vencimentoMes(ct, x.ym, x.mes) < hoje());
   const vencido = vencidos.reduce((s, x) => s + cent(x.c.emAberto), 0) / 100, qtdVencidos = vencidos.length;
-  const mc = mesCorrecaoDe(ct);
+  const mc = mesCorrecaoDe(ct), reajProx = mc ? proximoReajuste(ct) : '';
+  const recibos = cad.filter(x => situacaoPagto(x.mes) !== 'aberto' && x.c.recebido > 0).reverse();
+  let aba = 'extrato';
+  try { aba = sessionStorage.getItem('cl-aba-contrato') || 'extrato'; } catch { /* padrão */ }
 
-  $('#conteudo').innerHTML = cabecalho(esc(rotuloContrato(ct)) + (ct.status === 'encerrado' ? ' <span class="chip neutro">Encerrado</span>' : ''),
-    esc(descImovel(D.imoveis[ct.imovelId])),
-    `<a class="bt" href="#/contratos/${cid}">Editar contrato</a>
-     <a class="bt" href="#/contrato/${cid}/debito">Cálculo do débito</a><a class="bt" href="#/contrato/${cid}/acordos">Acordos</a>
-     <a class="bt" href="#/relatorios?tipo=contrato&id=${cid}&de=${cad[0]?.ym || atual}&ate=${ultimo?.ym || atual}">Relatório PDF</a>`,
-    '<a class="voltar" href="#/contratos">&larr; Contratos</a>') + `
-  <div class="kpis">
-    <div class="kpi"><span>Saldo em conta${ultimo ? ' (' + nomeMes(ultimo.ym) + ')' : ''}</span><b>${fmtMoeda(ultimo ? ultimo.c.saldoConta : ct.saldoInicial)}</b></div>
-    <div class="kpi"><span>Débito do locatário (vencido)</span><b class="${vencido > 0 ? 'neg' : ''}">${fmtMoeda(vencido)}</b><small>${qtdVencidos ? qtdVencidos + ' mês(es) em atraso · valores sem encargos' : 'Nenhum mês em atraso'}</small></div>
-    <div class="kpi"><span>Aluguel (cadastro)</span><b>${fmtMoeda(ct.valorAluguel)}</b></div>
-    <div class="kpi"><span>Taxa de administração</span><b>${fmtPct(ct.taxaAdm)}%</b><small>${descBase(ct.baseTaxa)}</small></div>
-    <div class="kpi"><span>Meses lançados</span><b>${cad.length}</b></div>
+  // Barra de vigência: quanto do prazo já correu e onde cai o próximo reajuste
+  const ms = d => new Date(d + (d.length === 7 ? '-01' : '') + 'T12:00:00').getTime();
+  let vig = '';
+  if (ct.inicio) {
+    const ini = ms(ct.inicio), fim = ct.fim ? ms(ct.fim) : 0, agora = ms(hoje());
+    const pct = fim > ini ? Math.max(0, Math.min(100, (agora - ini) / (fim - ini) * 100)) : 0;
+    const pr = fim > ini && reajProx ? (ms(reajProx) - ini) / (fim - ini) * 100 : -1;
+    const faltam = ct.fim ? mesesEntre(atual, ct.fim.slice(0, 7)) - 1 : 0;
+    const fimTxt = !ct.fim ? 'Prazo indeterminado' : ct.fim < hoje() ? `Fim ${fmtData(ct.fim)} · prazo encerrado` : `Fim ${fmtData(ct.fim)} · falta${faltam === 1 ? '' : 'm'} ${faltam} ${faltam === 1 ? 'mês' : 'meses'}`;
+    vig = `<div class="vig">${fim > ini ? `<div class="barra" title="${Math.round(pct)}% do prazo"><i style="width:${pct.toFixed(1)}%"></i>${pr >= 0 && pr <= 100 ? `<em style="left:${pr.toFixed(1)}%" title="Próximo reajuste"></em>` : ''}</div>` : ''}
+      <div class="marcos"><span>Início ${fmtData(ct.inicio)}</span>${reajProx ? `<span class="reaj">Próximo reajuste: ${nomeMes(reajProx).toLowerCase()}${ct.indiceReajuste ? ' (' + esc(ct.indiceReajuste) + ')' : ''}</span>` : ''}<span>${fimTxt}</span></div></div>`;
+  }
+  const situacao = ct.status === 'encerrado' ? '<span class="chip neutro">Encerrado</span>'
+    : qtdVencidos ? `<span class="chip pendente">${qtdVencidos} ${qtdVencidos === 1 ? 'mês' : 'meses'} em atraso</span>` : '<span class="chip fechado">Em dia</span>';
+  const encargos = (ct.encargos || []).map(e => e.rubrica).filter(Boolean);
+
+  $('#conteudo').innerHTML = `<div class="ficha">
+    <div>
+      <a class="voltar" href="#/contratos">&larr; Contratos</a>
+      <h1>${esc(rotuloContrato(ct))} ${situacao}</h1>
+      <div class="end">${esc(descImovel(D.imoveis[ct.imovelId]))}</div>
+      <div class="partes">
+        ${loc ? `<a href="#/locadores/${loc.id}">${pessoaHTML(loc.nome, 'Cliente (locador)', 34)}</a>` : ''}
+        ${lt ? `<a href="#/locatarios/${lt.id}">${pessoaHTML(lt.nome, 'Locatário', 34)}</a>` : ''}
+      </div>
+    </div>
+    <div class="acoes">
+      <a class="bt branco" href="#/contrato/${cid}/debito">${ic('calc')}Cálculo do débito</a>
+      <a class="bt" href="#/contrato/${cid}/acordos">${ic('acordo')}Acordos</a>
+      <a class="bt" href="#/relatorios?tipo=contrato&id=${cid}&de=${cad[0]?.ym || atual}&ate=${ultimo?.ym || atual}">${ic('pdf')}Relatório PDF</a>
+      <a class="bt" href="#/contratos/${cid}">${ic('editar')}Editar</a>
+    </div>
+    ${vig}
   </div>
-  <section class="cartao">
+  <div class="kpis k4">
+    ${kpiHTML({ ic: 'cofre', cor: 'az', t: 'Saldo em conta' + (ultimo ? ' (' + nomeMes(ultimo.ym) + ')' : ''), v: fmtMoeda(ultimo ? ultimo.c.saldoConta : ct.saldoInicial) })}
+    ${kpiHTML({ ic: 'alerta', cor: vencido > 0 ? 'vm' : 'vd', t: 'Débito do locatário (vencido)', v: fmtMoeda(vencido), neg: vencido > 0, sub: qtdVencidos ? 'valores sem encargos' : 'Nenhum mês em atraso', href: vencido > 0 ? `#/contrato/${cid}/debito` : '' })}
+    ${kpiHTML({ ic: 'dinheiro', cor: 'vd', t: 'Aluguel (cadastro)', v: fmtMoeda(ct.valorAluguel), sub: encargos.length ? '+ ' + esc(encargos.slice(0, 3).join(', ').toLowerCase()) + (encargos.length > 3 ? '…' : '') : '' })}
+    ${kpiHTML({ ic: 'pct', cor: 'rx', t: 'Taxa de administração', v: fmtPct(ct.taxaAdm) + '%', sub: descBase(ct.baseTaxa) })}
+  </div>
+  <div class="abas" role="tablist">
+    <button type="button" data-aba="extrato">${ic('cal')}Extrato mês a mês ${qtdVencidos ? `<b title="Meses em atraso">${qtdVencidos}</b>` : `<b class="cz">${cad.length}</b>`}</button>
+    <button type="button" data-aba="dados">${ic('contrato')}Dados do contrato</button>
+    <a href="#/contrato/${cid}/debito">${ic('calc')}Cálculo do débito</a>
+    <a href="#/contrato/${cid}/acordos">${ic('acordo')}Acordos</a>
+    <button type="button" data-aba="recibos">${ic('pdf')}Recibos${recibos.length ? ` <b class="cz">${recibos.length}</b>` : ''}</button>
+  </div>
+  <section class="cartao" data-painel="dados">
     <h2>Dados do contrato</h2>
     <dl class="dados">
-      ${dl('Cliente (locador)', loc?.nome)}${dl('Locatário', nomeDe('locatarios', ct.locatarioId))}
+      ${dl('Cliente (locador)', loc?.nome)}${dl('Locatário', lt?.nome)}
       ${dl('Vigência', [fmtData(ct.inicio), fmtData(ct.fim)].filter(Boolean).join(' a '))}${dl('Vencimento', ct.diaVencimento ? 'Dia ' + ct.diaVencimento + (ct.vencMesSeguinte === 'sim' ? ' do mês seguinte' : '') : '')}
-      ${dl('Reajuste', [ct.indiceReajuste, mc ? 'em ' + MESES[mc - 1].toLowerCase() + ' (próximo: ' + nomeMes(proximoReajuste(ct)) + ')' : ''].filter(Boolean).join(' · '))}
+      ${dl('Reajuste', [ct.indiceReajuste, mc ? 'em ' + MESES[mc - 1].toLowerCase() + ' (próximo: ' + nomeMes(reajProx) + ')' : ''].filter(Boolean).join(' · '))}
       ${dl('Encargos moratórios', (p => `multa ${fmtPct(p.multa)}% · juros ${fmtPct(p.juros)}% a.m. · honorários ${fmtPct(p.honorarios)}% · correção: ${p.indice}`)(paramsMora(ct)))}${dl('Garantia', descGarantia(ct))}
       ${dl('Repasse', loc ? [loc.banco && 'Banco ' + loc.banco, loc.agencia && 'Ag. ' + loc.agencia, loc.conta && 'Conta ' + loc.conta, loc.pix && 'PIX ' + loc.pix].filter(Boolean).join(' · ') : '')}
-      ${dl('Encargos mensais', (ct.encargos || []).map(e => e.rubrica).join(', '))}
+      ${dl('Encargos mensais', encargos.join(', '))}${dl('Meses lançados', cad.length ? `${cad.length} (${nomeMes(cad[0].ym)} a ${nomeMes(ultimo.ym)})` : '')}
     </dl>
   </section>
-  <section class="cartao">
+  <section class="cartao" data-painel="extrato">
     <div class="cartao-cab"><h2>Extrato mês a mês</h2><div class="acoes">
       <button class="bt primario" id="btGerarProx">Gerar ${nomeMes(proximo)}</button>
       ${proximo < atual ? `<button class="bt" id="btGerarAtual">Gerar até ${nomeMes(atual)}</button>` : ''}
@@ -1015,8 +1090,26 @@ async function telaContrato(cid) {
     ${cad.length ? `<div class="rolagem"><table class="tabela clicavel"><thead><tr><th>Mês</th><th>Pagamento</th><th class="num">Saldo anterior</th><th class="num">Devido</th><th class="num">Recebido</th><th class="num">Pago</th><th class="num">Taxa adm.</th><th class="num">Saldo do mês</th><th class="num">Repassado</th><th class="num">Saldo em conta</th><th>Situação</th></tr></thead><tbody>
       ${cad.slice().reverse().map(x => `<tr data-link="#/contrato/${cid}/${x.ym}"><td><b>${nomeMes(x.ym)}</b></td><td>${chipPagto(x.c, vencimentoMes(ct, x.ym, x.mes))}</td><td class="num">${fmtNum(x.c.saldoAnterior)}</td><td class="num">${fmtNum(x.c.devido)}</td><td class="num">${fmtNum(x.c.recebido)}</td><td class="num">${fmtNum(x.c.pago)}</td><td class="num">${fmtNum(x.c.taxa)}</td><td class="num">${fmtNum(x.c.saldoMes)}</td><td class="num">${fmtNum(x.c.repassado)}</td><td class="num"><b>${fmtNum(x.c.saldoConta)}</b></td><td>${x.mes.fechado ? '<span class="chip fechado">Fechado</span>' : '<span class="chip aberto">Em aberto</span>'}</td></tr>`).join('')}
     </tbody></table></div>` : `<p class="vazio">Nenhum mês lançado. O controle começa em <b>${nomeMes(inicioControle(ct))}</b>, com as rubricas do cadastro do contrato.</p>`}
+  </section>
+  <section class="cartao" data-painel="recibos">
+    <div class="cartao-cab"><h2>Recibos de aluguel</h2><a class="bt pequeno" href="#/relatorios?rel=recibos">Vários de uma vez…</a></div>
+    ${recibos.length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Mês</th><th>Pagamento</th><th class="num">Recebido</th><th></th></tr></thead><tbody>
+      ${recibos.map(x => `<tr><td><b>${nomeMes(x.ym)}</b></td><td>${chipPagto(x.c, vencimentoMes(ct, x.ym, x.mes))}</td><td class="num">${fmtNum(x.c.recebido)}</td><td class="num"><button class="bt pequeno" data-recibo="${x.ym}">${ic('pdf')}Recibo</button></td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="vazio">Nenhum pagamento registrado ainda. O recibo fica disponível quando o mês tiver pagamento do locatário.</p>'}
   </section>`;
   ligarBusca();
+  const mostrarAba = a => {
+    aba = a;
+    try { sessionStorage.setItem('cl-aba-contrato', a); } catch { /* sem armazenamento */ }
+    $$('.abas [data-aba]').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
+    $$('[data-painel]').forEach(s => { s.hidden = s.dataset.painel !== a; });
+  };
+  $$('.abas [data-aba]').forEach(b => b.addEventListener('click', () => mostrarAba(b.dataset.aba)));
+  mostrarAba(['extrato', 'dados', 'recibos'].includes(aba) ? aba : 'extrato');
+  $$('[data-recibo]').forEach(b => b.addEventListener('click', () => executar(async () => {
+    const ym = b.dataset.recibo;
+    await visualizarPDF(gerarRecibos([{ ct, ym, mes: ext.meses[ym] }]));
+  })));
   const gerar = alvo => executar(async () => {
     const n = await gerarAte(ct, alvo);
     aviso(n > 1 ? `${n} meses gerados.` : 'Mês gerado.');
@@ -1962,7 +2055,7 @@ async function conectado() {
   await carregarColecoes();
   document.body.classList.add('conectado');
   document.body.classList.toggle('admin', Auth.ehAdmin());
-  $('#usuarioTopo').innerHTML = `<a href="#/conta" title="Minha conta">${esc(Auth.usuario.nome)}</a>${Auth.ehAdmin() ? ' <span class="chip neutro">Administrador</span>' : ''}<button class="bt-sair" id="btSair">Sair</button>`;
+  $('#usuarioTopo').innerHTML = `<a href="#/conta" title="Minha conta" class="usu-link">${avatarHTML(Auth.usuario.nome, 28)}<span class="nome-usu">${esc(Auth.usuario.nome)}</span></a>${Auth.ehAdmin() ? ' <span class="chip neutro">Administrador</span>' : ''}<button class="bt-sair" id="btSair">Sair</button>`;
   $('#btSair').onclick = () => {
     if (sujo && !confirm('Há alterações não salvas. Sair mesmo assim?')) return;
     sujo = false;
@@ -1991,6 +2084,9 @@ async function conectado() {
 /* ================= Início ================= */
 function eventosGlobais() {
   $('#btMenu').addEventListener('click', () => document.body.classList.toggle('menu-aberto'));
+  $('#btMais').addEventListener('click', () => document.body.classList.toggle('menu-aberto'));
+  ligarBuscaGlobal();
+  aplicarMarcaTopo();
   $('#fundoMenu').addEventListener('click', () => document.body.classList.remove('menu-aberto'));
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal' || e.target.closest('[data-fechar]')) fecharModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) fecharModal(); });

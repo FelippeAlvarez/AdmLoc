@@ -330,15 +330,18 @@ details p { margin: 8px 0 0; }
       <li>Troque a senha inicial em <b>Minha conta</b>.</li>
     </ol>
     <div class="nota dica"><p>Este manual fica sempre à mão no botão <b>Manual de uso ↗</b>, no menu à esquerda do app. No fim do menu ficam a versão instalada e os links <b>Sobre e licenças</b> e <b>Termos de Uso</b>.</p></div>
-    <figure><img src="img/login.jpg" alt="Tela de login com campos de login e senha" loading="lazy">
-      <figcaption>Esqueceu a senha? Peça ao administrador para definir uma nova. Para sair, use <span class="botao">Sair</span>, no alto da tela.</figcaption></figure>
+    <figure><img src="img/login.jpg" alt="Tela de entrada com o nome da administradora à esquerda e os campos de login e senha à direita" loading="lazy">
+      <figcaption>A tela de entrada mostra o nome e o logotipo da administradora (cadastrados em Administração) depois do primeiro acesso no aparelho. Esqueceu a senha? Peça ao administrador para definir uma nova. Para sair, use <span class="botao">Sair</span>, no alto da tela.</figcaption></figure>
     <figure><img src="img/conta.jpg" alt="Tela Minha conta com os dados do usuário e o formulário para trocar a senha" loading="lazy">
-      <figcaption>Minha conta: seus dados de acesso e a troca de senha.</figcaption></figure>
+      <figcaption>Minha conta: seus dados de acesso e a troca de senha. Em <b>Aparência neste aparelho</b> você escolhe o modo claro, o escuro ou igual ao do aparelho.</figcaption></figure>
+    <h3>Menu e busca geral</h3>
+    <p>O menu à esquerda é dividido em <b>Rotina do mês</b>, <b>Cadastros</b>, <b>Análises</b> e <b>Sistema</b>. Os números ao lado de <b>Inadimplência</b> e <b>Repasses</b> mostram quantos contratos têm meses em atraso e quantos têm saldo a repassar. Na barra superior, a <b>busca geral</b> (atalho <b>Ctrl K</b>) encontra contrato, locatário, cliente ou imóvel pelo nome, número, endereço ou CPF/CNPJ: digite e tecle Enter, ou clique no resultado.</p>
 
     <h2 id="painel">Painel do mês</h2>
     <p>É a tela inicial: a situação do mês em todos os contratos ativos. Use as setas ◀ ▶ para trocar o mês.</p>
     <figure><img src="img/painel.jpg" alt="Painel do mês com indicadores e a lista de contratos" loading="lazy">
-      <figcaption>Os quadros resumem o mês: quanto é devido, quanto foi recebido, o que não foi pago, as taxas de administração e o saldo a repassar.</figcaption></figure>
+      <figcaption>Os quadros resumem o mês: quanto é devido, quanto foi recebido, o que não foi pago, as taxas de administração e o saldo a repassar. A pequena linha em cada quadro mostra os últimos 12 meses, e a variação compara com o mês anterior.</figcaption></figure>
+    <p>Abaixo dos quadros ficam dois gráficos: <b>devido × recebido nos últimos 12 meses</b> (clique numa barra para abrir aquele mês) e <b>em atraso por tempo</b>, que separa os valores vencidos e não pagos em até 30, de 31 a 90 e mais de 90 dias (valores sem encargos; clique para abrir a Inadimplência). Na lista de contratos, as <b>pílulas</b> filtram por situação e mostram quantos contratos há em cada uma; clique no título de uma coluna para ordenar.</p>
     <div class="tabela-rolagem"><table>
       <thead><tr><th>Sinal na tela</th><th>Significado</th></tr></thead>
       <tbody>
@@ -346,7 +349,7 @@ details p { margin: 8px 0 0; }
         <tr><td><b>A vencer</b> (amarelo)</td><td>Ainda não chegou o vencimento.</td></tr>
         <tr><td><b>Em atraso</b> / <b>Parcial</b> (vermelho)</td><td>Venceu e não foi pago, ou foi pago só em parte.</td></tr>
         <tr><td><b>Reajuste</b> (roxo)</td><td>O contrato tem reajuste anual a conferir neste mês.</td></tr>
-        <tr><td><b>Não gerado</b></td><td>O mês ainda não foi criado. Use o botão <span class="botao">Gerar … em N contratos</span>.</td></tr>
+        <tr><td><b>Mês não gerado</b></td><td>O mês ainda não foi criado. Use o botão <span class="botao">Gerar … em N contratos</span>.</td></tr>
       </tbody>
     </table></div>
 
@@ -365,7 +368,8 @@ details p { margin: 8px 0 0; }
       <figcaption><b>Encargos mensais</b>: condomínio, IPTU, seguro… com o valor <b>cobrado do locatário</b> e o valor <b>pago pela administradora</b>. Para contratos antigos, informe o <b>primeiro mês do controle</b> e o <b>saldo inicial em conta</b>.</figcaption></figure>
     <p>Clique num contrato para ver o resumo e o extrato mês a mês:</p>
     <figure><img src="img/contrato.jpg" alt="Tela do contrato com saldo, débito em atraso, dados e extrato mês a mês" loading="lazy">
-      <figcaption>No alto: <span class="botao">Editar contrato</span>, <span class="botao">Cálculo do débito</span> e <span class="botao">Relatório PDF</span>. Embaixo, cada mês com o que foi devido, recebido, pago, repassado e o saldo.</figcaption></figure>
+      <figcaption>No alto, as partes, os botões <span class="botao">Cálculo do débito</span>, <span class="botao">Acordos</span>, <span class="botao">Relatório PDF</span> e <span class="botao">Editar</span> e a barra de vigência: quanto do prazo já correu, o próximo reajuste (marca dourada) e o fim do contrato.</figcaption></figure>
+    <p>O conteúdo do contrato fica em abas: <b>Extrato mês a mês</b> (com o número de meses em atraso), <b>Dados do contrato</b>, <b>Cálculo do débito</b>, <b>Acordos</b> e <b>Recibos</b>, onde sai o recibo de cada mês pago sem precisar abrir o mês.</p>
 
     <h2 id="mes">Lançar o mês</h2>
     <p>Cada mês do contrato tem uma tela própria. Para criar o mês, clique em <span class="botao">Gerar mês</span> na tela do contrato (ou gere para todos no painel). O mês novo já vem com as rubricas e os valores do mês anterior e com o saldo não repassado.</p>
@@ -452,8 +456,8 @@ details p { margin: 8px 0 0; }
     <h3>Acordos de pagamento</h3>
     <p>Na tela do contrato, <span class="botao">Acordos</span> (ou <span class="botao">Simular acordo</span> num cálculo salvo).</p>
     <ol class="passos">
-      <li><b>Proposta</b>: escolha o débito (um cálculo salvo ou o débito atual pelos critérios do contrato), a data, o devedor (locatário ou fiador), o desconto (sobre o total ou por componente), a entrada e o parcelamento: juros ao mês (Tabela Price), data da 1ª parcela, número de parcelas ou valor da parcela. Defina também a correção, a multa e os juros da parcela paga em atraso.</li>
-      <li>O resultado mostra a composição do débito, o valor negociado, a tabela das parcelas e o rateio de cada pagamento entre o locador e os honorários advocatícios. Gere o PDF ou a planilha da proposta.</li>
+      <li><b>Proposta</b>: escolha o débito (um cálculo salvo ou o débito atual pelos critérios do contrato), a data, o devedor (locatário ou fiador), o desconto (sobre o total ou por componente, em % ou R$), a entrada (em % ou R$, ou <b>Igual às parcelas</b>: o app calcula uma entrada do mesmo valor de cada parcela) e o parcelamento: juros ao mês (Tabela Price), data da 1ª parcela, número de parcelas ou valor da parcela. Defina também a correção, os juros e a multa da parcela paga em atraso.</li>
+      <li>O resultado mostra a composição do débito, com a taxa de juros e o percentual da multa usados em cada linha, o valor negociado, a tabela das parcelas e o rateio de cada pagamento entre o locador e os honorários advocatícios. Gere o PDF ou a planilha da proposta.</li>
       <li><span class="botao">Acordo aceito: iniciar acompanhamento</span>: o débito e as parcelas ficam fixados, e os meses incluídos saem da Inadimplência e dos novos cálculos do débito.</li>
       <li><b>Acompanhamento</b>: <span class="botao">Registrar pagamento</span> em cada parcela (o app calcula correção, juros e multa se paga em atraso), <span class="botao">Amortização antecipada</span> (reduz o prazo ou a parcela), <span class="botao">Quitar o acordo</span>, <span class="botao">Descumprimento</span> (vencimento antecipado do saldo ou perda do desconto) e <span class="botao">Desfazer o último</span>.</li>
       <li><b>Prestação de contas</b>: em cada pagamento, marque <b>Lançar na prestação de contas do locador</b> e informe a data em que o valor ficou disponível (ex.: depósito judicial: data do levantamento). O valor sugerido é a parte do locador, sem os honorários; a taxa de administração incide, salvo se desmarcada.</li>
@@ -530,10 +534,10 @@ details p { margin: 8px 0 0; }
     <p class="dica">Contrato ativo é o que está com situação <b>Ativo</b> no cadastro, mesmo com o prazo encerrado. O informe de rendimentos e a DIMOB são documentos auxiliares: confira os critérios com o contador.</p>
 
     <h2 id="no-celular">No celular</h2>
-    <p>O app funciona no navegador do celular, com o mesmo login. O menu fica no botão ☰, no canto superior esquerdo.</p>
+    <p>O app funciona no navegador do celular, com o mesmo login. Uma barra fixa embaixo leva ao <b>Painel</b>, à <b>Inadimplência</b>, aos <b>Repasses</b> e aos <b>Contratos</b>; o botão <b>Mais</b> abre o menu completo. No Painel, os contratos aparecem como cartões, com o valor e a situação à vista. A lupa no alto abre a busca geral.</p>
     <div class="celulares">
-      <figure><img src="img/celular-painel.jpg" alt="Painel do mês no celular" loading="lazy"><figcaption>Painel do mês</figcaption></figure>
-      <figure><img src="img/celular-menu.jpg" alt="Menu aberto no celular" loading="lazy"><figcaption>Menu</figcaption></figure>
+      <figure><img src="img/celular-painel.jpg" alt="Painel do mês no celular com indicadores em duas colunas e barra de navegação embaixo" loading="lazy"><figcaption>Painel do mês</figcaption></figure>
+      <figure><img src="img/celular-contrato.jpg" alt="Página do contrato no celular" loading="lazy"><figcaption>Contrato</figcaption></figure>
       <figure><img src="img/celular-mes.jpg" alt="Rubricas do mês no celular" loading="lazy"><figcaption>Rubricas do mês</figcaption></figure>
     </div>
 

@@ -1,7 +1,7 @@
 'use strict';
 /* Telas, PDF e Excel dos acordos de pagamento (motor em acordo.js) */
 
-const opcaoTipoAc = (nome, tipo) => `<select data-ac-tipo="${nome}" class="sel-tipo" aria-label="Percentual ou valor"><option value="pct"${tipo !== 'valor' ? ' selected' : ''}>%</option><option value="valor"${tipo === 'valor' ? ' selected' : ''}>R$</option></select>`;
+const opcaoTipoAc = (nome, tipo, igualParcela) => `<select data-ac-tipo="${nome}" class="sel-tipo" aria-label="Percentual ou valor"><option value="pct"${tipo !== 'valor' && tipo !== 'parcela' ? ' selected' : ''}>%</option><option value="valor"${tipo === 'valor' ? ' selected' : ''}>R$</option>${igualParcela ? `<option value="parcela"${tipo === 'parcela' ? ' selected' : ''}>Igual às parcelas</option>` : ''}</select>`;
 const mostrarAc = (tipo, v) => v === '' || v == null ? '' : tipo === 'valor' ? fmtNum(v) : fmtPct(v);
 
 function devedoresDoContrato(ct) {
@@ -83,7 +83,7 @@ function editorAcordo(ct, a, novo) {
     <section class="cartao form"><h2>Desconto e entrada</h2><div class="grade-form">
       <div class="campo w2"><label>Desconto</label><div class="segmentado"><label><input type="radio" name="acDescModo" value="total"${d.modo !== 'itens' ? ' checked' : ''}> Sobre o total</label><label><input type="radio" name="acDescModo" value="itens"${d.modo === 'itens' ? ' checked' : ''}> Por componente</label></div></div>
       ${d.modo !== 'itens' ? `<div class="campo"><label for="acDesc">Desconto</label><div class="campo-bt">${opcaoTipoAc('desc', d.tipo)}<input id="acDesc" class="num" inputmode="decimal" data-num="desconto.valor" value="${mostrarAc(d.tipo, d.valor)}"></div></div>` : ''}
-      <div class="campo"><label for="acSinal">Entrada (sinal)</label><div class="campo-bt">${opcaoTipoAc('sinal', s.tipo)}<input id="acSinal" class="num" inputmode="decimal" data-num="sinal.valor" value="${mostrarAc(s.tipo, s.valor)}"></div></div>
+      <div class="campo"><label for="acSinal">Entrada (sinal)</label><div class="campo-bt">${opcaoTipoAc('sinal', s.tipo, true)}${s.tipo === 'parcela' ? '<input id="acSinal" class="num" disabled title="Calculada para ficar igual ao valor de cada parcela">' : `<input id="acSinal" class="num" inputmode="decimal" data-num="sinal.valor" value="${mostrarAc(s.tipo, s.valor)}">`}</div>${s.tipo === 'parcela' ? '<small>Mesmo valor de cada parcela.</small>' : ''}</div>
       <div class="campo"><label for="acSinalV">Vencimento da entrada</label><input type="date" id="acSinalV" data-a="sinal.venc" value="${s.venc || a.data}"></div>
     </div><div id="acItens"></div></section>
     <section class="cartao form"><h2>Parcelamento (Tabela Price)</h2><div class="grade-form">
@@ -95,8 +95,9 @@ function editorAcordo(ct, a, novo) {
       <div class="campo wfull"><label class="inline"><input type="checkbox" data-chk="parcelamento.jurosAte1"${p.jurosAte1 !== false ? ' checked' : ''}> Juros desde a data do acordo até a 1ª parcela (proporcionais aos dias)</label></div>
       <h3 class="sec wfull">Parcela paga em atraso</h3>
       <div class="campo"><label for="acIdx">Correção</label><select id="acIdx" data-a="parcelamento.indice">${[...INDICES_CORRECAO, 'Nenhum'].map(i => `<option${i === p.indice ? ' selected' : ''}>${i}</option>`).join('')}</select></div>
+      <div class="campo"><label for="acJuros">Juros de mora (% ao mês)</label><input id="acJuros" class="num" inputmode="decimal" data-num="encargos.juros" value="${fmtPct(a.encargos.juros)}"></div>
       <div class="campo"><label for="acMulta">Multa (%)</label><input id="acMulta" class="num" inputmode="decimal" data-num="encargos.multa" value="${fmtPct(a.encargos.multa)}"></div>
-      <div class="campo"><label for="acJuros">Juros (% ao mês)</label><input id="acJuros" class="num" inputmode="decimal" data-num="encargos.juros" value="${fmtPct(a.encargos.juros)}"></div>
+      <p class="alerta wfull" id="acAvisoEnc"${Number(a.encargos.juros) > Number(a.encargos.multa) ? '' : ' hidden'}>Os juros de mora (% ao mês) estão maiores que a multa: confira se não foram invertidos.</p>
       <div class="campo wfull"><label for="acObs">Observações</label><textarea id="acObs" data-a="obs" rows="2">${esc(a.obs || '')}</textarea></div>
     </div></section>
     <section class="cartao" id="acRes"></section>
@@ -113,6 +114,8 @@ function editorAcordo(ct, a, novo) {
       if (a.desconto.modo === 'itens') $('#acItens').innerHTML = itensDescontoHTML(a, c);
       else $('#acItens').innerHTML = '';
       $('#acRes').innerHTML = resultadoAcordoHTML(a, c);
+      if (a.sinal.tipo === 'parcela' && $('#acSinal')) $('#acSinal').value = fmtNum(c.sinal);
+      $('#acAvisoEnc')?.toggleAttribute('hidden', !(Number(a.encargos.juros) > Number(a.encargos.multa)));
     } catch (e) { c = null; $('#acRes').innerHTML = `<p class="alerta">${esc(e.message)}</p>`; }
   }
 
@@ -128,7 +131,7 @@ function editorAcordo(ct, a, novo) {
       if (ds.a) caminho(a, ds.a, ds.a === 'parcelamento.prazo' ? Number(t.value) || '' : t.value);
       else if (ds.num) caminho(a, ds.num, t.value.trim() === '' ? '' : r2(parseValor(t.value)));
       else if (ds.chk) caminho(a, ds.chk, t.checked);
-      else if (ds.acTipo) { if (ds.acTipo === 'desc') a.desconto.tipo = t.value; else if (ds.acTipo === 'sinal') a.sinal.tipo = t.value; else caminho(a.desconto.itens, ds.acTipo + '.tipo', t.value); }
+      else if (ds.acTipo) { if (ds.acTipo === 'desc') a.desconto.tipo = t.value; else if (ds.acTipo === 'sinal') { const antes = a.sinal.tipo; a.sinal.tipo = t.value; if ((antes === 'parcela') !== (t.value === 'parcela')) return mudou(true); } else caminho(a.desconto.itens, ds.acTipo + '.tipo', t.value); }
       else if (ds.item) caminho(a.desconto.itens, ds.item + '.valor', t.value.trim() === '' ? '' : r2(parseValor(t.value)));
       else if (t.name === 'acDescModo') { a.desconto.modo = t.value; return mudou(true); }
       else if (t.name === 'acModo') { a.parcelamento.modo = t.value; return mudou(true); }
@@ -179,19 +182,20 @@ function editorAcordo(ct, a, novo) {
 
 function itensDescontoHTML(a, c) {
   return `<div class="rolagem"><table class="tabela tab-edicao"><thead><tr><th>Componente</th><th class="num">Valor</th><th>Desconto</th><th class="num">Desconto (R$)</th></tr></thead><tbody>
-    ${COMPONENTES_ACORDO.filter(([k]) => c.deb.comp[k]).map(([k, rot]) => { const it = a.desconto.itens?.[k] || {}; return `<tr><td>${esc(rot)}</td><td class="num">${fmtNum(c.deb.comp[k])}</td>
+    ${COMPONENTES_ACORDO.filter(([k]) => c.deb.comp[k]).map(([k]) => { const rot = rotuloComponente(k, c.deb), it = a.desconto.itens?.[k] || {}; return `<tr><td>${esc(rot)}</td><td class="num">${fmtNum(c.deb.comp[k])}</td>
       <td><div class="campo-bt">${opcaoTipoAc(k, it.tipo)}<input class="num" inputmode="decimal" data-item="${k}" value="${mostrarAc(it.tipo, it.valor)}" aria-label="Desconto em ${esc(rot)}"></div></td><td class="num">${fmtNum(c.descItens[k] || 0)}</td></tr>`; }).join('')}
   </tbody></table></div>`;
 }
 
 function resultadoAcordoHTML(a, c) {
   const deb = c.deb;
-  return `<h2>Resultado</h2>
+  const av = avisoJurosMulta(deb);
+  return `<h2>Resultado</h2>${av ? `<p class="alerta">${esc(av)}</p>` : ''}
     <div class="kpis"><div class="kpi"><span>Débito em ${fmtData(a.data)}</span><b>${fmtMoeda(deb.total)}</b></div><div class="kpi"><span>Desconto</span><b>${fmtMoeda(c.desconto)}</b></div>
-      <div class="kpi"><span>Valor negociado</span><b>${fmtMoeda(c.negociado)}</b></div><div class="kpi"><span>Entrada</span><b>${fmtMoeda(c.sinal)}</b></div>
+      <div class="kpi"><span>Valor negociado</span><b>${fmtMoeda(c.negociado)}</b></div><div class="kpi"><span>Entrada${a.sinal?.tipo === 'parcela' ? ' (igual às parcelas)' : ''}</span><b>${fmtMoeda(c.sinal)}</b></div>
       <div class="kpi"><span>${c.plano.n} parcela${c.plano.n === 1 ? '' : 's'} de</span><b>${fmtMoeda(c.plano.pmt)}</b></div><div class="kpi"><span>Total do acordo</span><b>${fmtMoeda(c.totalAcordo)}</b></div></div>
     <div class="rolagem"><table class="tabela"><thead><tr><th>Composição do débito (${esc(deb.calcNome)})</th><th class="num">Valor</th></tr></thead><tbody>
-      ${COMPONENTES_ACORDO.filter(([k]) => deb.comp[k]).map(([k, rot]) => `<tr><td>${esc(rot)}</td><td class="num">${fmtNum(deb.comp[k])}</td></tr>`).join('')}
+      ${COMPONENTES_ACORDO.filter(([k]) => deb.comp[k]).map(([k]) => `<tr><td>${esc(rotuloComponente(k, deb))}</td><td class="num">${fmtNum(deb.comp[k])}</td></tr>`).join('')}
       <tr class="total-geral"><td>Total</td><td class="num">${fmtNum(deb.total)}</td></tr></tbody></table></div>
     ${c.plano.parcelas.length ? `<h3 class="sec">Parcelas</h3><div class="rolagem"><table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Juros</th><th class="num">Amortização</th><th class="num">Saldo</th></tr></thead><tbody>
       ${c.sinal ? `<tr><td>Entrada</td><td>${fmtData(a.sinal.venc || a.data)}</td><td class="num">${fmtNum(c.sinal)}</td><td class="num"></td><td class="num">${fmtNum(c.sinal)}</td><td class="num">${fmtNum(c.saldo)}</td></tr>` : ''}
@@ -356,7 +360,7 @@ function pdfAcordo(ct, a, c) {
   tituloPDF(P, a.situacao === 'proposta' ? 'Proposta de acordo' : 'Acordo de pagamento', [...infoAcordo(ct, a).map((t, i) => [t, i ? 9 : 10, i ? 'normal' : 'bold']), [`Data do acordo: ${fmtData(a.data)}`, 9, 'normal', COR_SUAVE]]);
   subtituloPDF(P, 'Débito em ' + fmtData(a.data));
   tabelaPDF(P, [{ t: 'Componente', w: 140 }, { t: 'Valor (R$)', w: 42, a: 'r' }],
-    [...COMPONENTES_ACORDO.filter(([k]) => c.deb.comp[k]).map(([k, rot]) => ({ c: [rot, fmtNum(c.deb.comp[k])] })), { c: ['Total do débito', fmtNum(c.deb.total)], total: true }], 9);
+    [...COMPONENTES_ACORDO.filter(([k]) => c.deb.comp[k]).map(([k]) => ({ c: [rotuloComponente(k, c.deb), fmtNum(c.deb.comp[k])] })), { c: ['Total do débito', fmtNum(c.deb.total)], total: true }], 9);
   resumoPDF(P, [['Débito', c.deb.total], ['(-) Desconto', c.desconto], ['(=) Valor negociado', c.negociado, 'b'], ['(-) Entrada', c.sinal], ['(=) Saldo parcelado', c.saldo, 'b'], ['Total do acordo (entrada + parcelas)', c.totalAcordo, 'f']], 110);
   if (c.plano.parcelas.length || c.sinal) {
     subtituloPDF(P, 'Parcelas' + (Number(a.parcelamento?.taxa) ? ` (juros de ${fmtPct(a.parcelamento.taxa)}% ao mês, Tabela Price)` : ''));
@@ -366,7 +370,7 @@ function pdfAcordo(ct, a, c) {
         { c: ['Total', '', fmtNum(c.totalAcordo), fmtNum(c.totalJuros), '', ''], total: true }], 8.5);
   }
   const enc = a.encargos || {};
-  paragrafoPDF(P, `Parcela paga em atraso: correção ${a.parcelamento?.indice && a.parcelamento.indice !== 'Nenhum' ? 'pelo ' + a.parcelamento.indice : 'não aplicada'}, juros de ${fmtPct(enc.juros || 0)}% ao mês pro rata die e multa de ${fmtPct(enc.multa || 0)}%.`, 8.5);
+  paragrafoPDF(P, `Parcela paga em atraso: correção monetária ${a.parcelamento?.indice && a.parcelamento.indice !== 'Nenhum' ? 'pelo ' + a.parcelamento.indice : 'não aplicada'}; juros de mora de ${fmtPct(enc.juros || 0)}% ao mês, pro rata die; multa de ${fmtPct(enc.multa || 0)}% sobre o valor da parcela.`, 8.5);
   if (a.obs) { P.y += 2; paragrafoPDF(P, 'Observações: ' + a.obs, 8.5, 'italic', COR_SUAVE); }
   rodapePDF(P);
   return { doc: P.doc, nome: nomeArquivo(a.situacao === 'proposta' ? 'proposta-acordo' : 'acordo', ct.codigo, a.data) + '.pdf' };
@@ -393,7 +397,7 @@ function xlsxAcordo(ct, a, c) {
   const L = [...cabecalhoXLSX(), [{ v: a.situacao === 'proposta' ? 'Proposta de acordo' : 'Acordo de pagamento', s: 'tit' }], ...infoAcordo(ct, a).map(t => [t]), [`Data do acordo: ${fmtData(a.data)}`], null,
     { c: ['Componente', 'Valor'].map(v => ({ v, s: 'cab' })) }];
   const ini = L.length + 1;
-  COMPONENTES_ACORDO.filter(([k]) => c.deb.comp[k]).forEach(([k, rot]) => L.push([rot, { v: c.deb.comp[k], s: 'm' }]));
+  COMPONENTES_ACORDO.filter(([k]) => c.deb.comp[k]).forEach(([k]) => L.push([rotuloComponente(k, c.deb), { v: c.deb.comp[k], s: 'm' }]));
   L.push([{ v: 'Total do débito', s: 'bt' }, { f: `SUM(B${ini}:B${L.length})`, v: c.deb.total, s: 'mt' }]);
   L.push([{ v: 'Desconto', s: 'b' }, { v: c.desconto, s: 'm' }], [{ v: 'Valor negociado', s: 'b' }, { v: c.negociado, s: 'm' }], [{ v: 'Entrada', s: 'b' }, { v: c.sinal, s: 'm' }], [{ v: 'Saldo parcelado', s: 'b' }, { v: c.saldo, s: 'm' }], null);
   L.push({ c: ['Parcela', 'Vencimento', 'Valor', 'Juros', 'Amortização', 'Saldo'].map(v => ({ v, s: 'cab' })) });
