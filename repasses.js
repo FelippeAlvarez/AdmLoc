@@ -55,7 +55,12 @@ async function linhasRepasse(mes) {
   cts.forEach((ct, i) => {
     const cad = calcularExtrato(ct, exts[i]);
     const x = cad.find(z => z.ym === mes);
-    if (!x) { if (ct.status !== 'encerrado' && mes >= (cad[0]?.ym || inicioControle(ct))) out.push({ ct, naoGerado: true, situacao: 'sem', livre: 0 }); return; }
+    if (!x) {
+      // Mês não gerado: se já há recebimento marcado para ele (ex.: pagamento de acordo), a locação aparece como pendente
+      const aLancar = lancamentosSemMes(ct, exts[i]).find(z => z.ym === mes)?.valor || 0;
+      if (ct.status !== 'encerrado' && mes >= (cad[0]?.ym || inicioControle(ct))) out.push({ ct, naoGerado: true, aLancar, situacao: aLancar > 0 ? 'pendente' : 'sem', livre: 0 });
+      return;
+    }
     const k = x.c;
     const livre = r2(k.saldoConta - k.programado);
     const situacao = livre > 0.004 ? 'pendente' : k.programado > 0 ? 'programado' : k.repassado > 0 ? 'repassado' : 'sem';
@@ -146,7 +151,7 @@ async function telaRepasses(h) {
     } else {
       $('#rpLista').innerHTML = `<div class="rolagem"><table class="tabela"><thead><tr><th><input type="checkbox" id="rpTodos" aria-label="Selecionar todas"></th><th>Contrato</th><th>Cliente(s)</th><th>Locatário</th><th>Pagamento</th>
         <th class="num">Saldo anterior</th><th class="num">Recebido</th><th class="num">Despesas pagas</th><th class="num">Taxa de adm.</th><th class="num">A repassar</th><th class="num">Programado</th><th class="num">Repassado</th><th>Situação</th></tr></thead><tbody>
-        ${l.map(x => x.naoGerado ? `<tr><td></td><td><a href="#/contrato/${x.ct.id}/${st.mes}">${esc(x.ct.codigo)}</a></td><td>${esc(nomeDe('locadores', x.ct.locadorId))}</td><td>${esc(nomeDe('locatarios', x.ct.locatarioId))}</td><td colspan="9"><span class="dica">Mês ainda não gerado no contrato</span></td></tr>`
+        ${l.map(x => x.naoGerado ? `<tr><td></td><td><a href="#/contrato/${x.ct.id}/${st.mes}">${esc(x.ct.codigo)}</a></td><td>${esc(nomeDe('locadores', x.ct.locadorId))}</td><td>${esc(nomeDe('locatarios', x.ct.locatarioId))}</td><td colspan="9">${x.aLancar > 0 ? `<span class="chip pendente">${fmtMoeda(x.aLancar)} recebido aguarda o mês</span> <button class="bt pequeno" data-gerar-rep="${x.ct.id}">Gerar ${nomeMes(st.mes)} no contrato</button>` : '<span class="dica">Mês ainda não gerado no contrato</span>'}</td></tr>`
           : `<tr><td>${ck(x)}</td><td><a href="#/contrato/${x.ct.id}/${st.mes}">${esc(x.ct.codigo)}</a>${x.x.mes.fechado ? ' <span class="chip neutro">fechado</span>' : ''}</td>
           <td>${beneficiariosDe(x.ct).map(b => esc(nomeDe('locadores', b.locadorId)) + (beneficiariosDe(x.ct).length > 1 ? ` (${fmtPct(b.pct)}%)` : '')).join('<br>')}</td><td>${esc(nomeDe('locatarios', x.ct.locatarioId))}</td>
           <td>${chipPagto(x.k, vencimentoMes(x.ct, st.mes, x.x.mes))}</td><td class="num">${fmtNum(x.k.saldoAnterior)}</td><td class="num">${fmtNum(x.k.recebido)}</td><td class="num">${fmtNum(x.k.pago)}</td><td class="num">${fmtNum(x.k.taxa)}</td>
@@ -157,6 +162,11 @@ async function telaRepasses(h) {
       $('#rpTodos')?.addEventListener('change', e => { l.filter(x => !x.naoGerado).forEach(x => e.target.checked ? sel.add(x.ct.id) : sel.delete(x.ct.id)); desenhar(); });
     }
     $$('[data-sel]').forEach(c => c.addEventListener('change', () => { c.checked ? sel.add(c.dataset.sel) : sel.delete(c.dataset.sel); desenhar(); }));
+    $$('[data-gerar-rep]').forEach(b => b.addEventListener('click', () => executar(async () => {
+      const ct = D.contratos[b.dataset.gerarRep];
+      if (!confirm(`Gerar ${nomeMes(st.mes)} no contrato ${ct.codigo}? Serão criados os meses que faltam até ele, com as rubricas e o saldo do mês anterior.`)) return;
+      await gerarAte(ct, st.mes); aviso('Mês gerado.'); rotear();
+    })));
   }
   desenhar();
 

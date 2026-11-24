@@ -219,10 +219,11 @@ function resultadoAcordoHTML(a, c) {
     <div class="rolagem"><table class="tabela"><thead><tr><th>Composição do débito (${esc(deb.calcNome)})</th><th class="num">Valor</th></tr></thead><tbody>
       ${COMPONENTES_ACORDO.filter(([k]) => deb.comp[k]).map(([k]) => `<tr><td>${esc(rotuloComponente(k, deb))}</td><td class="num">${fmtNum(deb.comp[k])}</td></tr>`).join('')}
       <tr class="total-geral"><td>Total</td><td class="num">${fmtNum(deb.total)}</td></tr></tbody></table></div>
-    ${c.plano.parcelas.length ? `<h3 class="sec">Parcelas</h3><div class="rolagem"><table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Juros</th><th class="num">Amortização</th><th class="num">Saldo</th></tr></thead><tbody>
-      ${c.sinal ? `<tr><td>Entrada</td><td>${fmtData(a.sinal.venc || a.data)}</td><td class="num">${fmtNum(c.sinal)}</td><td class="num"></td><td class="num">${fmtNum(c.sinal)}</td><td class="num">${fmtNum(c.saldo)}</td></tr>` : ''}
-      ${c.plano.parcelas.map(p => `<tr><td>${p.n}</td><td>${fmtData(p.venc)}</td><td class="num">${fmtNum(p.valor)}</td><td class="num">${fmtNum(p.juros)}</td><td class="num">${fmtNum(p.amort)}</td><td class="num">${fmtNum(p.saldo)}</td></tr>`).join('')}
-      <tr class="total-geral"><td colspan="2">Total</td><td class="num">${fmtNum(c.totalAcordo)}</td><td class="num">${fmtNum(c.totalJuros)}</td><td colspan="2"></td></tr></tbody></table></div>` : ''}
+    ${c.plano.parcelas.length || c.sinal ? (() => { const hon = c.propHon > 0, rc = v => hon ? `<td class="num">${fmtNum(rateio(v, c.propHon).locador)}</td><td class="num">${fmtNum(rateio(v, c.propHon).hon)}</td>` : '';
+      return `<h3 class="sec">Parcelas</h3><div class="rolagem"><table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th>${hon ? '<th class="num">Cliente</th><th class="num">Honorários</th>' : ''}<th class="num">Juros</th><th class="num">Amortização</th><th class="num">Saldo</th></tr></thead><tbody>
+      ${c.sinal ? `<tr><td>Entrada</td><td>${fmtData(a.sinal.venc || a.data)}</td><td class="num">${fmtNum(c.sinal)}</td>${rc(c.sinal)}<td class="num"></td><td class="num">${fmtNum(c.sinal)}</td><td class="num">${fmtNum(c.saldo)}</td></tr>` : ''}
+      ${c.plano.parcelas.map(p => `<tr><td>${p.n}</td><td>${fmtData(p.venc)}</td><td class="num">${fmtNum(p.valor)}</td>${rc(p.valor)}<td class="num">${fmtNum(p.juros)}</td><td class="num">${fmtNum(p.amort)}</td><td class="num">${fmtNum(p.saldo)}</td></tr>`).join('')}
+      <tr class="total-geral"><td colspan="2">Total</td><td class="num">${fmtNum(c.totalAcordo)}</td>${rc(c.totalAcordo)}<td class="num">${fmtNum(c.totalJuros)}</td><td colspan="2"></td></tr></tbody></table></div>`; })() : ''}
     ${c.honNeg > 0 ? `<p class="dica">Rateio de cada pagamento: ${fmtPct(r2((1 - c.propHon) * 100))}% para o locador e ${fmtPct(r2(c.propHon * 100))}% de honorários advocatícios (${fmtMoeda(c.honNeg)} no valor negociado).</p>` : ''}
     ${deb.r ? notasDebito(deb.r).map(n => `<p class="dica">${esc(n)}</p>`).join('') : ''}`;
 }
@@ -235,8 +236,18 @@ function situacaoParcela(p, data) {
   return d > 0 ? `<span class="chip pendente">Vencida há ${d} dia${d === 1 ? '' : 's'}</span>` : '<span class="chip neutro">A vencer</span>';
 }
 
+// Parte do cliente e parte dos honorários num lançamento: o valor lançado na prestação de contas, se houver; senão, o rateio
+function partesEvento(a, e) {
+  const v = Number(e.valor) || 0;
+  if (e.prestacao?.lancar) {
+    const loc = e.prestacao.valor === '' || e.prestacao.valor == null ? v : Number(e.prestacao.valor);
+    return { locador: r2(loc), hon: r2(Math.max(0, v - loc)) };
+  }
+  return rateio(v, a.propHon || 0);
+}
+
 function acompanhamentoAcordo(ct, a) {
-  const cid = ct.id, h = hoje();
+  const cid = ct.id, h = hoje(), temHon = (a.propHon || 0) > 0, mesesGerados = new Set(Object.keys(D.extratos[cid]?.meses || {}));
   const parcelas = parcelasDoAcordo(a), q = a.situacao === 'aceito' ? valorQuitacao(a, h) : null;
   const pago = somar(a.eventos || [], e => e.valor || 0);
   $('#conteudo').innerHTML = cabecalho(esc(a.nome) + ' ' + chipAcordo(a.situacao), `${esc(rotuloContrato(ct))} · Devedor: <b>${esc(nomeDevedor(ct, a))}</b> · Acordo de ${fmtData(a.data)}`,
@@ -245,16 +256,18 @@ function acompanhamentoAcordo(ct, a) {
     <div class="kpi"><span>Pago até hoje</span><b>${fmtMoeda(pago)}</b></div>${q ? `<div class="kpi"><span>Para quitar hoje</span><b>${fmtMoeda(q.total)}</b></div>` : ''}</div>
   <section class="cartao">
     <div class="cartao-cab"><h2>Parcelas</h2>${a.situacao === 'aceito' ? `<div class="acoes"><button class="bt" id="acAmort">Amortização antecipada</button><button class="bt" id="acQuitar">Quitar o acordo</button><button class="bt perigo" id="acDescump">Descumprimento</button></div>` : ''}</div>
-    <div class="rolagem"><table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th><th class="num">Pago (nominal)</th><th>Situação</th><th></th></tr></thead><tbody>
-      ${parcelas.map(p => `<tr><td>${p.n || 'Entrada'}</td><td>${fmtData(p.venc)}</td><td class="num">${fmtNum(p.valor)}</td><td class="num">${p.pago ? fmtNum(p.pago) : ''}</td><td>${situacaoParcela(p, h)}</td>
+    <div class="rolagem"><table class="tabela"><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th>${temHon ? '<th class="num">Cliente</th><th class="num">Honorários</th>' : ''}<th class="num">Pago (nominal)</th><th>Situação</th><th></th></tr></thead><tbody>
+      ${parcelas.map(p => `<tr><td>${p.n || 'Entrada'}</td><td>${fmtData(p.venc)}</td><td class="num">${fmtNum(p.valor)}</td>${temHon ? `<td class="num">${fmtNum(rateio(p.valor, a.propHon).locador)}</td><td class="num">${fmtNum(rateio(p.valor, a.propHon).hon)}</td>` : ''}<td class="num">${p.pago ? fmtNum(p.pago) : ''}</td><td>${situacaoParcela(p, h)}</td>
         <td>${a.situacao === 'aceito' && restanteNominal(p) > 0 ? `<button class="bt pequeno" data-pagar="${p.n}">Registrar pagamento</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
+    ${temHon ? `<p class="dica">Rateio de cada pagamento: ${fmtPct(r2((1 - a.propHon) * 100))}% para o cliente (locador) e ${fmtPct(r2(a.propHon * 100))}% de honorários advocatícios, na proporção dos honorários no valor negociado. Pagamentos em atraso com encargos seguem a mesma proporção.</p>` : ''}
   </section>
   <section class="cartao">
     <div class="cartao-cab"><h2>Lançamentos</h2>${(a.eventos || []).length ? '<div class="acoes"><button class="bt pequeno" id="acDesfazer">Desfazer o último</button></div>' : ''}</div>
-    ${(a.eventos || []).length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Data</th><th>Lançamento</th><th class="num">Valor</th><th>Prestação de contas</th><th>Observação</th></tr></thead><tbody>
-      ${a.eventos.map(e => `<tr><td>${fmtData(e.data)}</td><td>${esc(descEvento(e))}</td><td class="num">${e.valor ? fmtNum(e.valor) : fmtNum(e.devido || 0)}</td>
-        <td>${e.prestacao?.lancar ? `${fmtMoeda(e.prestacao.valor === '' || e.prestacao.valor == null ? e.valor : e.prestacao.valor)} em ${fmtData(e.prestacao.data)}${e.prestacao.taxa === false ? ' (sem taxa)' : ''}` : e.valor ? 'Não lançado' : ''}</td><td>${esc(e.obs || '')}</td></tr>`).join('')}
+    ${(a.eventos || []).length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Data</th><th>Lançamento</th><th class="num">Valor</th>${temHon ? '<th class="num">Cliente</th><th class="num">Honorários</th>' : ''}<th>Prestação de contas</th><th>Observação</th></tr></thead><tbody>
+      ${a.eventos.map(e => { const pc = partesEvento(a, e), sem = e.prestacao?.lancar && ehData(e.prestacao.data) && !mesesGerados.has(e.prestacao.data.slice(0, 7));
+        return `<tr><td>${fmtData(e.data)}</td><td>${esc(descEvento(e))}</td><td class="num">${e.valor ? fmtNum(e.valor) : fmtNum(e.devido || 0)}</td>${temHon ? `<td class="num">${e.valor ? fmtNum(pc.locador) : ''}</td><td class="num">${e.valor ? fmtNum(pc.hon) : ''}</td>` : ''}
+        <td>${e.prestacao?.lancar ? `${fmtMoeda(pc.locador)} em ${fmtData(e.prestacao.data)}${e.prestacao.taxa === false ? ' (sem taxa)' : ''}${sem ? ` <span class="chip pendente">${nomeMes(e.prestacao.data.slice(0, 7))} não gerado</span>` : ''}` : e.valor ? 'Não lançado' : ''}</td><td>${esc(e.obs || '')}</td></tr>`; }).join('')}
     </tbody></table></div>` : '<p class="vazio">Nenhum pagamento lançado.</p>'}
     <p class="dica">Os pagamentos marcados para a prestação de contas entram no mês da data informada, como "Recebido de acordo", com a taxa de administração do contrato (se marcada).</p>
   </section>`;
@@ -303,8 +316,9 @@ function modalPagamentoAcordo(ct, a, n, gravar) {
   info();
   $('#mpOk').addEventListener('click', () => executar(async () => {
     const data = $('#mpData').value;
-    lancarPagamento(a, { n, data, valor: r2(parseValor($('#mpValor').value)), obs: $('#mpObs').value.trim(), prestacao: lerPrestacao(data) });
-    fecharModal(); await gravar(); aviso('Pagamento registrado.');
+    const prestacao = lerPrestacao(data);
+    lancarPagamento(a, { n, data, valor: r2(parseValor($('#mpValor').value)), obs: $('#mpObs').value.trim(), prestacao });
+    fecharModal(); await gravarAcordo(ct.id, a); aviso('Pagamento registrado.'); await oferecerGerarMes(ct, prestacao); rotear();
   }));
 }
 
@@ -322,8 +336,9 @@ function modalAmortAcordo(ct, a, gravar) {
   $('#mpValor').addEventListener('change', () => { $('#mpValLoc').value = fmtNum(rateio(r2(parseValor($('#mpValor').value)), a.propHon || 0).locador); });
   $('#mpOk').addEventListener('click', () => executar(async () => {
     const data = $('#mpData').value;
-    lancarAmortizacao(a, { data, valor: r2(parseValor($('#mpValor').value)), efeito: $('input[name=mpEf]:checked').value, obs: $('#mpObs').value.trim(), prestacao: lerPrestacao(data) });
-    fecharModal(); await gravar(); aviso('Amortização registrada; as parcelas restantes foram recalculadas.');
+    const prestacao = lerPrestacao(data);
+    lancarAmortizacao(a, { data, valor: r2(parseValor($('#mpValor').value)), efeito: $('input[name=mpEf]:checked').value, obs: $('#mpObs').value.trim(), prestacao });
+    fecharModal(); await gravarAcordo(ct.id, a); aviso('Amortização registrada; as parcelas restantes foram recalculadas.'); await oferecerGerarMes(ct, prestacao); rotear();
   }));
 }
 
@@ -341,8 +356,9 @@ function modalQuitarAcordo(ct, a, gravar) {
     $('#mpInfo').textContent = `Para quitação em ${fmtData($('#mpData').value)}: ${fmtMoeda(x.total)}.`; });
   $('#mpOk').addEventListener('click', () => executar(async () => {
     const data = $('#mpData').value;
-    lancarQuitacao(a, { data, valor: r2(parseValor($('#mpValor').value)), obs: $('#mpObs').value.trim(), prestacao: lerPrestacao(data) });
-    fecharModal(); await gravar(); aviso('Acordo quitado.');
+    const prestacao = lerPrestacao(data);
+    lancarQuitacao(a, { data, valor: r2(parseValor($('#mpValor').value)), obs: $('#mpObs').value.trim(), prestacao });
+    fecharModal(); await gravarAcordo(ct.id, a); aviso('Acordo quitado.'); await oferecerGerarMes(ct, prestacao); rotear();
   }));
 }
 
@@ -403,12 +419,16 @@ function pdfExtratoAcordo(ct, a, data) {
   P.cab();
   tituloPDF(P, 'Extrato do acordo', [...infoAcordo(ct, a).map((t, i) => [t, i ? 9 : 10, i ? 'normal' : 'bold']), [`Acordo de ${fmtData(a.data)} · situação em ${fmtData(data)}: ${SITUACOES_ACORDO[a.situacao]}`, 9, 'normal', COR_SUAVE]]);
   subtituloPDF(P, 'Parcelas');
-  tabelaPDF(P, [{ t: 'Parcela', w: 22 }, { t: 'Vencimento', w: 28, nw: true }, { t: 'Valor', w: 34, a: 'r' }, { t: 'Pago (nominal)', w: 34, a: 'r' }, { t: 'Situação', w: 64 }],
-    parcelasDoAcordo(a).map(p => ({ c: [p.n ? String(p.n) : 'Entrada', fmtData(p.venc), fmtNum(p.valor), p.pago ? fmtNum(p.pago) : '', situacaoParcela(p, data).replace(/<[^>]+>/g, '')] })), 8.5);
+  const temHon = (a.propHon || 0) > 0;
+  tabelaPDF(P, temHon ? [{ t: 'Parcela', w: 18 }, { t: 'Vencimento', w: 24, nw: true }, { t: 'Valor', w: 26, a: 'r' }, { t: 'Cliente', w: 26, a: 'r' }, { t: 'Honorários', w: 26, a: 'r' }, { t: 'Pago (nominal)', w: 26, a: 'r' }, { t: 'Situação', w: 36 }]
+    : [{ t: 'Parcela', w: 22 }, { t: 'Vencimento', w: 28, nw: true }, { t: 'Valor', w: 34, a: 'r' }, { t: 'Pago (nominal)', w: 34, a: 'r' }, { t: 'Situação', w: 64 }],
+    parcelasDoAcordo(a).map(p => ({ c: [p.n ? String(p.n) : 'Entrada', fmtData(p.venc), fmtNum(p.valor), ...(temHon ? [fmtNum(rateio(p.valor, a.propHon).locador), fmtNum(rateio(p.valor, a.propHon).hon)] : []), p.pago ? fmtNum(p.pago) : '', situacaoParcela(p, data).replace(/<[^>]+>/g, '')] })), 8.5);
+  if (temHon) paragrafoPDF(P, `Rateio de cada pagamento: ${fmtPct(r2((1 - a.propHon) * 100))}% para o cliente (locador) e ${fmtPct(r2(a.propHon * 100))}% de honorários advocatícios.`, 8, 'normal', COR_SUAVE);
   if ((a.eventos || []).length) {
     subtituloPDF(P, 'Lançamentos');
-    tabelaPDF(P, [{ t: 'Data', w: 24, nw: true }, { t: 'Lançamento', w: 100 }, { t: 'Valor', w: 32, a: 'r' }, { t: 'Observação', w: 46 }],
-      a.eventos.map(e => ({ c: [fmtData(e.data), descEvento(e), fmtNum(e.valor || e.devido || 0), e.obs || ''] })), 8.5);
+    tabelaPDF(P, temHon ? [{ t: 'Data', w: 22, nw: true }, { t: 'Lançamento', w: 74 }, { t: 'Valor', w: 26, a: 'r' }, { t: 'Cliente', w: 26, a: 'r' }, { t: 'Honorários', w: 26, a: 'r' }, { t: 'Observação', w: 28 }]
+      : [{ t: 'Data', w: 24, nw: true }, { t: 'Lançamento', w: 100 }, { t: 'Valor', w: 32, a: 'r' }, { t: 'Observação', w: 46 }],
+      a.eventos.map(e => { const pc = partesEvento(a, e); return { c: [fmtData(e.data), descEvento(e), fmtNum(e.valor || e.devido || 0), ...(temHon ? [e.valor ? fmtNum(pc.locador) : '', e.valor ? fmtNum(pc.hon) : ''] : []), e.obs || ''] }; }), 8.5);
   }
   if (a.situacao === 'aceito') { const q = valorQuitacao(a, data); resumoPDF(P, [['Pago até a data', somar(a.eventos || [], e => e.valor || 0)], [`Valor para quitação em ${fmtData(data)}`, q.total, 'f']], 110); }
   rodapePDF(P);

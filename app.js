@@ -395,6 +395,28 @@ function calcularExtrato(ct, ext) {
   });
 }
 
+/*
+  Recebimentos marcados para a prestação de contas de um mês que ainda não foi gerado no contrato (ex.: pagamento de
+  acordo disponível em novembro, com o extrato só até outubro). Eles só entram no extrato e nos repasses quando o mês
+  for gerado; até lá, as telas avisam.
+*/
+function lancamentosSemMes(ct, ext) {
+  return Object.entries(recebimentosLancados(ct, ext)).filter(([ym]) => !ext.meses[ym])
+    .map(([ym, l]) => ({ ym, valor: l.reduce((s, v) => s + v.r.recebido, 0) / 100, itens: l })).sort((a, b) => comparar(a.ym, b.ym));
+}
+// Depois de registrar um pagamento para a prestação de contas: se o mês ainda não existe, oferece gerá-lo
+async function oferecerGerarMes(ct, prestacao) {
+  if (!prestacao?.lancar || !ehData(prestacao.data)) return;
+  const ym = prestacao.data.slice(0, 7), ext = await carregarExtrato(ct.id);
+  if (ext.meses[ym]) return;
+  const ult = Object.keys(ext.meses).sort().pop();
+  if (ult && ym < ult) return; // mês anterior ao controle já existente: não se gera para trás
+  if (confirm(`O valor entra na prestação de contas de ${nomeMes(ym)}, que ainda não foi gerado neste contrato. Enquanto o mês não existir, ele não aparece no extrato nem nos repasses.\n\nGerar ${nomeMes(ym)} agora?`)) {
+    const n = await gerarAte(ct, ym);
+    aviso(`${n > 1 ? n + ' meses gerados' : nomeMes(ym) + ' gerado'}. O valor já está na prestação de contas.`);
+  } else aviso(`Lembre de gerar ${nomeMes(ym)} no contrato para o valor entrar na prestação de contas.`);
+}
+
 const inicioControle = ct => ct.inicioControle || (ct.inicio || '').slice(0, 7) || mesAtual();
 
 function linhasDoContrato(ct) {
@@ -1039,6 +1061,7 @@ async function telaContrato(cid) {
   const situacao = ct.status === 'encerrado' ? '<span class="chip neutro">Encerrado</span>'
     : qtdVencidos ? `<span class="chip pendente">${qtdVencidos} ${qtdVencidos === 1 ? 'mês' : 'meses'} em atraso</span>` : '<span class="chip fechado">Em dia</span>';
   const encargos = (ct.encargos || []).map(e => e.rubrica).filter(Boolean);
+  const semMes = lancamentosSemMes(ct, ext);
 
   $('#conteudo').innerHTML = `<div class="ficha">
     <div>
@@ -1058,6 +1081,7 @@ async function telaContrato(cid) {
     </div>
     ${vig}
   </div>
+  ${semMes.map(x => `<div class="alerta faixa">${ic('alerta')}<span><b>${fmtMoeda(x.valor)}</b> ${x.itens.length > 1 ? 'recebidos' : 'recebido'} (${esc(x.itens.map(i => i.desc || 'pagamento em atraso').join('; '))}) ${x.itens.length > 1 ? 'entram' : 'entra'} na prestação de contas de <b>${nomeMes(x.ym)}</b>, que ainda não foi gerado. Até gerar o mês, o valor não aparece no extrato nem nos repasses.</span><span class="espaco"></span><button class="bt pequeno" data-gerar-sem-mes="${x.ym}">Gerar ${nomeMes(x.ym)}</button></div>`).join('')}
   <div class="kpis k4">
     ${kpiHTML({ ic: 'cofre', cor: 'az', t: 'Saldo em conta' + (ultimo ? ' (' + nomeMes(ultimo.ym) + ')' : ''), v: fmtMoeda(ultimo ? ultimo.c.saldoConta : ct.saldoInicial) })}
     ${kpiHTML({ ic: 'alerta', cor: vencido > 0 ? 'vm' : 'vd', t: 'Débito do locatário (vencido)', v: fmtMoeda(vencido), neg: vencido > 0, sub: qtdVencidos ? 'valores sem encargos' : 'Nenhum mês em atraso', href: vencido > 0 ? `#/contrato/${cid}/debito` : '' })}
@@ -1116,6 +1140,7 @@ async function telaContrato(cid) {
     location.hash = `#/contrato/${cid}/${alvo}`;
   });
   $('#btGerarProx').addEventListener('click', () => gerar(proximo));
+  $$('[data-gerar-sem-mes]').forEach(b => b.addEventListener('click', () => gerar(b.dataset.gerarSemMes)));
   $('#btGerarAtual')?.addEventListener('click', () => gerar(atual));
 }
 
